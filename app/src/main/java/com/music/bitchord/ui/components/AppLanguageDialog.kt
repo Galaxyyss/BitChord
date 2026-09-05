@@ -37,7 +37,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.bitchord.R
 import com.music.bitchord.data.settings.AppSettings
 import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.hazeEffect
 import dev.chrisbanes.haze.materials.ExperimentalHazeMaterialsApi
 import dev.chrisbanes.haze.materials.HazeMaterials
 import java.util.Locale
@@ -50,6 +49,7 @@ val SUPPORTED_LANGUAGES = listOf(
     AppLanguage("es", R.string.spanish),
     AppLanguage("fr", R.string.french),
     AppLanguage("de", R.string.german),
+    AppLanguage("pl", R.string.polish),
     AppLanguage("pt", R.string.portuguese),
     AppLanguage("id", R.string.indonesian),
     AppLanguage("hi", R.string.hindi),
@@ -57,6 +57,8 @@ val SUPPORTED_LANGUAGES = listOf(
     AppLanguage("ru", R.string.russian),
     AppLanguage("zh", R.string.chinese),
     AppLanguage("he", R.string.hebrew),
+    AppLanguage("it", R.string.italian),
+    AppLanguage("tr", R.string.turkish),
 )
 
 fun languageDisplayNameRes(languageTag: String): Int =
@@ -99,7 +101,7 @@ fun AppLanguageDialog(
                     if (reduceDynamicBlur) {
                         Modifier.background(MaterialTheme.colorScheme.surface)
                     } else {
-                        Modifier.hazeEffect(
+                        Modifier.optimizedHazeEffect(
                             state = hazeState,
                             style = HazeMaterials.regular(MaterialTheme.colorScheme.surface),
                         )
