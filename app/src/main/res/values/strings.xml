@@ -704,4 +704,6 @@
     <string name="use_this_profile">Use this profile</string>
     <string name="switch_profile_hint">Switch using the avatar, then use this profile.</string>
     <string name="profile_unavailable">No signed-in profile is available on this page yet.</string>
+    <string name="dynamic_blurred_artwork">Dynamic blurred album art background</string>
+    <string name="dynamic_blurred_artwork_subtitle">Uses the current track\u0027s cover art as a blurred backdrop on non-player screens</string>
 </resources>
