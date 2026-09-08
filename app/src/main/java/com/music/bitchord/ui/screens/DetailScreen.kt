@@ -504,6 +504,9 @@ fun DetailScreen(
                                                 onDragEnd = {
                                                     AppSettings.reorderPlaylistTrack(page.browseId, song.videoId)
                                                 },
+                                                onDrag = { change, _ ->
+                                                    change.consume()
+                                                },
                                             )
                                         }
                                     } else {
