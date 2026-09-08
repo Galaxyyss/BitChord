@@ -3141,6 +3141,7 @@ private fun LibrarySort.localizedLabel(): String = when (this) {
     LibrarySort.DEFAULT -> stringResource(R.string.sort_default)
     LibrarySort.TITLE_ASC -> stringResource(R.string.sort_title_ascending)
     LibrarySort.TITLE_DESC -> stringResource(R.string.sort_title_descending)
+    LibrarySort.CUSTOM -> stringResource(R.string.sort_custom)
 }
 
 @Composable
@@ -3148,6 +3149,7 @@ private fun SongSort.localizedLabel(): String = when (this) {
     SongSort.DEFAULT -> stringResource(R.string.sort_default)
     SongSort.TITLE_ASC -> stringResource(R.string.sort_title_ascending)
     SongSort.TITLE_DESC -> stringResource(R.string.sort_title_descending)
+    SongSort.CUSTOM -> stringResource(R.string.sort_custom)
 }
 
 /**

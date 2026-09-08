@@ -3,6 +3,8 @@ package com.music.bitchord.ui.screens
 import com.music.bitchord.R
 
 import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -125,6 +127,7 @@ enum class SongSort {
     DEFAULT,
     TITLE_ASC,
     TITLE_DESC,
+    CUSTOM,
 }
 
 private const val MAX_ARTIST_SONGS = 20
@@ -485,28 +488,46 @@ fun DetailScreen(
                     itemsIndexed(matches) { position, entry ->
                         val song = entry.value
                         val isCurrent = song.isSameTrackAs(currentSong)
-                        SongRow(
-                            song = if (numbered) {
-                                song
-                            } else {
-                                song.copy(thumbnailUrl = song.thumbnailUrl ?: page.thumbnailUrl)
-                            },
-                            onClick = {
-                                val startIdx = if (page.type == BrowseType.PLAYLIST) entry.index else position
-                                onSongClick(queue, startIdx)
-                            },
-                            onLongPress = { onSongLongPress(song) },
-                            onSwipeToQueue = { onSongSwipe(song) },
-                            rowBackground = Color.Transparent,
-                            // The track's place on the release, not its place in
-                            // what the filter — or a sort — left standing.
-                            trackNumber = originalTrackNumbers[song.videoId].takeIf { numbered },
-                            subtitleColor = palette.onBackgroundVariant,
-                            downloadedTint = downloadedTint,
-                            isCurrent = isCurrent,
-                            isPlaying = isCurrent && isPlaying,
-                            activeTint = palette.accent,
-                        )
+                        val isPlaylistCustom = page.type == BrowseType.PLAYLIST && songSort == SongSort.CUSTOM
+                        val displaySong = if (numbered) {
+                            song
+                        } else {
+                            song.copy(thumbnailUrl = song.thumbnailUrl ?: page.thumbnailUrl)
+                        }
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .then(
+                                    if (isPlaylistCustom) {
+                                        Modifier.pointerInput(Unit) {
+                                            detectDragGestures(
+                                                onDragEnd = {
+                                                    AppSettings.reorderPlaylistTrack(page.browseId, song.videoId)
+                                                },
+                                            )
+                                        }
+                                    } else {
+                                        Modifier
+                                    },
+                                ),
+                        ) {
+                            SongRow(
+                                song = displaySong,
+                                onClick = {
+                                    val startIdx = if (page.type == BrowseType.PLAYLIST) entry.index else position
+                                    onSongClick(queue, startIdx)
+                                },
+                                onLongPress = { onSongLongPress(song) },
+                                onSwipeToQueue = { onSongSwipe(song) },
+                                rowBackground = Color.Transparent,
+                                trackNumber = originalTrackNumbers[song.videoId].takeIf { numbered },
+                                subtitleColor = palette.onBackgroundVariant,
+                                downloadedTint = downloadedTint,
+                                isCurrent = isCurrent,
+                                isPlaying = isCurrent && isPlaying,
+                                activeTint = palette.accent,
+                            )
+                        }
                         if (position < matches.lastIndex) {
                             HorizontalDivider(
                                 modifier = Modifier.padding(start = ROW_DIVIDER_INSET),
@@ -844,6 +865,7 @@ private fun List<Song>.sortedForDetail(sort: SongSort): List<Song> = when (sort)
     SongSort.DEFAULT -> this
     SongSort.TITLE_ASC -> sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
     SongSort.TITLE_DESC -> sortedWith(compareByDescending(String.CASE_INSENSITIVE_ORDER) { it.title })
+    SongSort.CUSTOM -> this  // order is controlled by playlistTrackOrder in the caller
 }
 
 /**
