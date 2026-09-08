@@ -36,6 +36,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.Edit
@@ -50,6 +51,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -246,6 +248,12 @@ fun DetailScreen(
 ) {
     val rawSongs = (page.songs as? UiState.Success)?.data.orEmpty()
     val songs = remember(rawSongs, songSort) { rawSongs.sortedForDetail(songSort) }
+    val isArtist = page.type == BrowseType.ARTIST
+    val isPlaylist = page.type == BrowseType.PLAYLIST
+
+    // Edit mode for playlist reordering — a Spotify-style explicit toggle.
+    var isEditing by rememberSaveable(isPlaylist) { mutableStateOf(false) }
+
     // For playlists in edit mode, derive the display order from the persisted custom order.
     val playlistCustomOrder by AppSettings.playlistTrackOrder.collectAsStateWithLifecycle()
     val orderedSongs = if (isPlaylist && isEditing) {
@@ -266,12 +274,8 @@ fun DetailScreen(
     val originalTrackNumbers = remember(rawSongs) {
         rawSongs.withIndex().associate { (i, s) -> s.videoId to i + 1 }
     }
-    val isArtist = page.type == BrowseType.ARTIST
-    val isPlaylist = page.type == BrowseType.PLAYLIST
     val palette = rememberArtworkPalette(page.thumbnailUrl)
 
-    // Edit mode for playlist reordering — a Spotify-style explicit toggle.
-    var isEditing by rememberSaveable(isPlaylist) { mutableStateOf(false) }
     // Tracks being dragged: which index in the visible list is being moved.
     var draggingIndex by remember { mutableIntStateOf(-1) }
 
@@ -536,6 +540,10 @@ fun DetailScreen(
                             var offsetY by remember { mutableFloatStateOf(0f) }
                             var isDragging by remember { mutableStateOf(false) }
 
+                            // Pull density out of the non-composable drag callbacks.
+                            val density = LocalDensity.current
+                            val rowHeightPx = with(density) { 64.dp.toPx() }
+
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -548,8 +556,7 @@ fun DetailScreen(
                                         },
                                         onDragStopped = {
                                             // Resolve the final position to an index.
-                                            val rowHeight = 64f.dp.toPx()
-                                            val movedBy = (offsetY / rowHeight).toInt()
+                                            val movedBy = (offsetY / rowHeightPx).toInt()
                                             if (movedBy != 0) {
                                                 val targetIndex = (index + movedBy).coerceIn(0, orderedSongs.lastIndex)
                                                 // Build the new list with the item moved.
