@@ -242,23 +242,27 @@ class MainActivity : AppCompatActivity() {
                 ThemeMode.DARK -> true
             }
             BitChordTheme(darkTheme = darkTheme) {
-                // The glass surfaces sample this layer, and a layer records only
-                // what is drawn into it — which, for BitChord, is a page that
-                // paints no background of its own. Everywhere a page is not
-                // showing artwork the recording is transparent, so the glass had
-                // nothing to blur there and you saw straight through it to the
-                // sharp page underneath: album art came through the bar blurred
-                // and text came through it untouched. The window's background is
-                // the floor the pages have always been drawn against, so it is
-                // laid down here too and the recording is opaque like the screen.
-                val windowBackground = MaterialTheme.colorScheme.background
-                val paintBackdrop: ContentDrawScope.() -> Unit = remember(windowBackground) {
-                    {
-                        drawRect(windowBackground)
-                        drawContent()
-                    }
+            // The glass surfaces sample this layer, and a layer records only
+            // what is drawn into it — which, for BitChord, is a page that
+            // paints no background of its own. Everywhere a page is not
+            // showing artwork the recording is transparent, so the glass had
+            // nothing to blur there and you saw straight through it to the
+            // sharp page underneath: album art came through the bar blurred
+            // and text came through it untouched. The window's background is
+            // the floor the pages have always been drawn against, so it is
+            // laid down here too and the recording is opaque like the screen.
+            val windowBackground = MaterialTheme.colorScheme.background
+            val dynamicBlurredArtworkEnabled by AppSettings.dynamicBlurredArtwork.collectAsStateWithLifecycle()
+
+            // When the blurred artwork setting is on and a track is playing,
+            // use it as the backdrop instead of the solid window colour.
+            val paintBackdrop: ContentDrawScope.() -> Unit = remember(windowBackground) {
+                {
+                    drawRect(windowBackground)
+                    drawContent()
                 }
-                val appBackdrop = rememberLayerBackdrop(onDraw = paintBackdrop)
+            }
+            val appBackdrop = rememberLayerBackdrop(onDraw = paintBackdrop)
                 CompositionLocalProvider(
                     LocalOverscrollFactory provides iosOverscrollFactory,
                     LocalLiquidGlassEnabled provides liquidGlassEnabled,
@@ -601,6 +605,18 @@ private fun BitChordApp(
     val controller = rememberMediaController()
     val player = rememberPlayerState(controller)
     val shuffleEnabled by QueueShuffle.enabled.collectAsStateWithLifecycle()
+
+    // Dynamic blurred artwork backdrop: when enabled and a track is playing,
+    // use the cover art as a blurred background behind non-player screens.
+    val dynamicBlurredArtworkEnabled by AppSettings.dynamicBlurredArtwork.collectAsStateWithLifecycle()
+    val currentArtworkUrl = player.song?.thumbnailUrl
+    val blurredBackdrop = if (dynamicBlurredArtworkEnabled && currentArtworkUrl != null) {
+        rememberBlurredArtworkBackdrop(currentArtworkUrl)
+    } else {
+        // Fall back to the standard layer backdrop when disabled or no track.
+        appBackdrop
+    }
+
     // A conversion is deliberately scoped to the current listening session.
     // Keeping the complete original row here lets Revert restore the exact
     // video upload, including its title and playlist identity, rather than
@@ -1704,7 +1720,7 @@ private fun BitChordApp(
                                     // cost that setting exists to remove.
                                     .then(
                                         if (glassSamplesBackdrop) {
-                                            Modifier.layerBackdrop(appBackdrop)
+                                            Modifier.layerBackdrop(blurredBackdrop)
                                         } else {
                                             Modifier
                                         },
