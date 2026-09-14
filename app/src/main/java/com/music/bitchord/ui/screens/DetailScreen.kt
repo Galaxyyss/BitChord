@@ -62,6 +62,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.lazy.LazyListItemInfo
+import androidx.compose.ui.withFrameNanos
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -136,6 +138,12 @@ enum class SongSort {
 
 private const val MAX_ARTIST_SONGS = 20
 private const val SONGS_PER_COLUMN = 4
+
+/** Edge zone for playlist reordering auto-scroll, in dp. */
+private val PLAYLIST_EDGE_SCROLL_ZONE = 40.dp
+
+/** Auto-scroll speed for playlist reordering, in dp per second. */
+private val PLAYLIST_EDGE_SCROLL_SPEED = 340.dp
 
 /** The artist photo, very slightly taller than it is wide. */
 private const val ARTIST_PHOTO_RATIO = 0.95f
@@ -543,6 +551,58 @@ fun DetailScreen(
                             // Pull density out of the non-composable drag callbacks.
                             val density = LocalDensity.current
                             val rowHeightPx = with(density) { 64.dp.toPx() }
+                            val edgeZonePx = with(density) { PLAYLIST_EDGE_SCROLL_ZONE.toPx() }
+                            val edgeSpeedPx = with(density) { PLAYLIST_EDGE_SCROLL_SPEED.toPx() }
+
+                            // Edge-scroll speed: computed each recomposition from the
+                            // dragged row's current position. 0f means no scrolling.
+                            val scrollSpeed = if (isDragging) {
+                                // Find where this row currently sits in the viewport.
+                                val info = listState.layoutInfo.visibleItemsInfo.find { it.key == "track-${song.videoId}" }
+                                if (info == null) 0f else {
+                                    val topEdge = info.offset + offsetY - 32f
+                                    val bottomEdge = info.offset + offsetY + 32f
+                                    val viewportTop = listState.layoutInfo.viewportStartOffset.toFloat()
+                                    val viewportBottom = listState.layoutInfo.viewportEndOffset.toFloat()
+                                    val intoTop = (viewportTop + edgeZonePx) - topEdge
+                                    val intoBottom = bottomEdge - (viewportBottom - edgeZonePx)
+                                    val reach = when {
+                                        intoTop > 0f && intoBottom <= 0f -> -intoTop
+                                        intoBottom > 0f && intoTop <= 0f -> intoBottom
+                                        else -> 0f
+                                    }
+                                    if (reach == 0f) 0f else {
+                                        val ramp = abs(reach) / edgeZonePx
+                                        val speed = edgeSpeedPx * (0.2f + 0.8f * ramp.coerceAtMost(1f))
+                                        if (reach < 0f) -speed else speed
+                                    }
+                                }
+                            } else {
+                                0f
+                            }
+                            // Guard: don't scroll past the list boundaries.
+                            val clampedSpeed = when {
+                                scrollSpeed < 0f && (index == 0 || !listState.canScrollBackward) -> 0f
+                                scrollSpeed > 0f && (index >= orderedSongs.lastIndex || !listState.canScrollForward) -> 0f
+                                else -> scrollSpeed
+                            }
+
+                            // Single auto-scroll loop for this row. When clampedSpeed is
+                            // non-zero it drives listState.scrollBy() each frame until the
+                            // list runs out of room or the drag ends.
+                            LaunchedEffect(index, clampedSpeed, isDragging) {
+                                if (clampedSpeed == 0f) return@LaunchedEffect
+                                var previous = withFrameNanos { it }
+                                while (true) {
+                                    val now = withFrameNanos { it }
+                                    val seconds = ((now - previous) / 1_000_000_000f).coerceAtMost(1f / 30f)
+                                    previous = now
+                                    val scrolled = listState.scroll {
+                                        scrollBy(clampedSpeed * seconds)
+                                    }
+                                    if (scrolled == 0f) break
+                                }
+                            }
 
                             Row(
                                 modifier = Modifier
