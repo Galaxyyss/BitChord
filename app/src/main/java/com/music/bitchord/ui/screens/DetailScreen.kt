@@ -550,24 +550,40 @@ fun DetailScreen(
                             val isCurrent = song.isSameTrackAs(currentSong)
                             val displaySong = song.copy(thumbnailUrl = song.thumbnailUrl ?: page.thumbnailUrl)
 
-                            // Track drag state for this row.
-                            var offsetY by remember { mutableFloatStateOf(0f) }
-                            var isDragging by remember { mutableStateOf(false) }
-
-                            // Pull density out of the non-composable drag callbacks.
+                            // Live reorder state: which item is being dragged and where.
+                            var draggingIndex by remember { mutableIntStateOf(-1) }
+                            var dragOffsetY by remember { mutableFloatStateOf(0f) }
                             val density = LocalDensity.current
                             val rowHeightPx = with(density) { 64.dp.toPx() }
-                            val edgeZonePx = with(density) { PLAYLIST_EDGE_SCROLL_ZONE.toPx() }
-                            val edgeSpeedPx = with(density) { PLAYLIST_EDGE_SCROLL_SPEED.toPx() }
+
+                            // Build the display list: when dragging, apply the live swap.
+                            val displayList = if (draggingIndex >= 0 && dragOffsetY != 0f) {
+                                val movedBy = (dragOffsetY / rowHeightPx).toInt()
+                                val fromIdx = draggingIndex
+                                val toIdx = (fromIdx + movedBy).coerceIn(0, orderedSongs.lastIndex)
+                                if (fromIdx != toIdx) {
+                                    orderedSongs.toMutableList().apply {
+                                        val item = removeAt(fromIdx)
+                                        add(toIdx, item)
+                                    }
+                                } else {
+                                    orderedSongs
+                                }
+                            } else {
+                                orderedSongs
+                            }
 
                             // Edge-scroll speed: computed each recomposition from the
                             // dragged row's current position. 0f means no scrolling.
+                            val isDragging = draggingIndex == index
+                            val edgeZonePx = with(density) { PLAYLIST_EDGE_SCROLL_ZONE.toPx() }
+                            val edgeSpeedPx = with(density) { PLAYLIST_EDGE_SCROLL_SPEED.toPx() }
+
                             val scrollSpeed = if (isDragging) {
-                                // Find where this row currently sits in the viewport.
                                 val info = listState.layoutInfo.visibleItemsInfo.find { it.key == "track-${song.videoId}" }
                                 if (info == null) 0f else {
-                                    val topEdge = info.offset + offsetY - 32f
-                                    val bottomEdge = info.offset + offsetY + 32f
+                                    val topEdge = info.offset + dragOffsetY - 32f
+                                    val bottomEdge = info.offset + dragOffsetY + 32f
                                     val viewportTop = listState.layoutInfo.viewportStartOffset.toFloat()
                                     val viewportBottom = listState.layoutInfo.viewportEndOffset.toFloat()
                                     val intoTop = (viewportTop + edgeZonePx) - topEdge
@@ -586,16 +602,12 @@ fun DetailScreen(
                             } else {
                                 0f
                             }
-                            // Guard: don't scroll past the list boundaries.
                             val clampedSpeed = when {
                                 scrollSpeed < 0f && (index == 0 || !listState.canScrollBackward) -> 0f
                                 scrollSpeed > 0f && (index >= orderedSongs.lastIndex || !listState.canScrollForward) -> 0f
                                 else -> scrollSpeed
                             }
 
-                            // Single auto-scroll loop for this row. When clampedSpeed is
-                            // non-zero it drives listState.scrollBy() each frame until the
-                            // list runs out of room or the drag ends.
                             LaunchedEffect(index, clampedSpeed, isDragging) {
                                 if (clampedSpeed == 0f) return@LaunchedEffect
                                 var previous = withFrameNanos { it }
@@ -608,50 +620,53 @@ fun DetailScreen(
                                 }
                             }
 
+                            // The current song row may be from the displayList, not orderedSongs.
+                            val currentSongEntry = displayList[index]
+                            val isCurrentDisplay = currentSongEntry.isSameTrackAs(currentSong)
+                            val displaySongRow = currentSongEntry.copy(thumbnailUrl = currentSongEntry.thumbnailUrl ?: page.thumbnailUrl)
+
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .offset { IntOffset(0, offsetY.roundToInt()) }
-                                    .draggable(
-                                        orientation = androidx.compose.foundation.gestures.Orientation.Vertical,
-                                        state = rememberDraggableState { delta ->
-                                            offsetY += delta
-                                            isDragging = true
-                                        },
-                                        onDragStopped = {
-                                            // Resolve the final position to an index.
-                                            val movedBy = (offsetY / rowHeightPx).toInt()
-                                            if (movedBy != 0) {
-                                                val targetIndex = (index + movedBy).coerceIn(0, orderedSongs.lastIndex)
-                                                // Build the new list with the item moved.
-                                                val newItem = orderedSongs[index]
-                                                val newList = orderedSongs.toMutableList().apply {
-                                                    removeAt(index)
-                                                    add(targetIndex, newItem)
-                                                }
-                                                // Persist locally and notify ViewModel for YT sync.
-                                                AppSettings.setPlaylistTrackOrder(
-                                                    page.browseId,
-                                                    newList.map { it.videoId },
-                                                )
-                                                onReorderComplete?.invoke(newList.map { it.videoId })
-                                            }
-                                            offsetY = 0f
-                                            isDragging = false
-                                        },
-                                    ),
+                                    .offset {
+                                        if (draggingIndex == index) {
+                                            IntOffset(0, dragOffsetY.roundToInt())
+                                        } else {
+                                            IntOffset(0, 0)
+                                        }
+                                    },
                             ) {
-                                DragHandleIcon(isDragging)
+                                DragHandleIcon(
+                                    isDragging = draggingIndex == index,
+                                    onDragStart = { draggingIndex = index },
+                                    onDragDelta = { dragOffsetY += it },
+                                    onDragEnd = {
+                                        val movedBy = (dragOffsetY / rowHeightPx).toInt()
+                                        if (movedBy != 0) {
+                                            val fromIdx = draggingIndex
+                                            val toIdx = (fromIdx + movedBy).coerceIn(0, orderedSongs.lastIndex)
+                                            val newItem = orderedSongs[fromIdx]
+                                            val newList = orderedSongs.toMutableList().apply {
+                                                removeAt(fromIdx)
+                                                add(toIdx, newItem)
+                                            }
+                                            AppSettings.setPlaylistTrackOrder(page.browseId, newList.map { it.videoId })
+                                            onReorderComplete?.invoke(newList.map { it.videoId })
+                                        }
+                                        draggingIndex = -1
+                                        dragOffsetY = 0f
+                                    },
+                                )
                                 SongRow(
-                                    song = displaySong,
+                                    song = displaySongRow,
                                     onClick = {}, // disabled in edit mode
                                     onLongPress = null, // disabled in edit mode
                                     onSwipeToQueue = null, // disabled in edit mode
                                     rowBackground = Color.Transparent,
                                     subtitleColor = palette.onBackgroundVariant,
                                     downloadedTint = downloadedTint,
-                                    isCurrent = isCurrent,
-                                    isPlaying = isCurrent && isPlaying,
+                                    isCurrent = isCurrentDisplay,
+                                    isPlaying = isCurrentDisplay && isPlaying,
                                     activeTint = palette.accent,
                                 )
                             }
@@ -1797,7 +1812,12 @@ private fun String?.toSeconds(): Int {
 
 /** Drag handle icon shown on playlist song rows during edit mode. */
 @Composable
-private fun DragHandleIcon(isDragging: Boolean) {
+private fun DragHandleIcon(
+    isDragging: Boolean,
+    onDragStart: (() -> Unit)? = null,
+    onDragDelta: ((Float) -> Unit)? = null,
+    onDragEnd: (() -> Unit)? = null,
+) {
     val tint = if (isDragging) {
         MaterialTheme.colorScheme.onSurfaceVariant
     } else {
@@ -1809,6 +1829,20 @@ private fun DragHandleIcon(isDragging: Boolean) {
         tint = tint,
         modifier = Modifier
             .size(24.dp)
-            .padding(horizontal = 6.dp),
+            .padding(horizontal = 6.dp)
+            .then(
+                if (onDragStart != null && onDragDelta != null && onDragEnd != null) {
+                    Modifier.draggable(
+                        orientation = androidx.compose.foundation.gestures.Orientation.Vertical,
+                        state = rememberDraggableState { delta ->
+                            onDragStart()
+                            onDragDelta(delta)
+                        },
+                        onDragStopped = { onDragEnd?.invoke() },
+                    )
+                } else {
+                    Modifier
+                },
+            ),
     )
 }
