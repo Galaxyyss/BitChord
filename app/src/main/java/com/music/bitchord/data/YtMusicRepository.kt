@@ -727,6 +727,22 @@ object YtMusicRepository {
         call("playlist:delete") { Innertube.deletePlaylist(playlistId) }
 
     /**
+     * Reorders tracks in a user-owned playlist. [newOrder] is the full desired
+     * sequence of video ids; every track except the one landing at index 0 needs
+     * a `beforeVideoId` pointing to its predecessor in that list.
+     *
+     * Returns success only when YT Music accepted every move — partial success
+     * is not possible because the endpoint applies actions atomically.
+     */
+    suspend fun reorderPlaylist(playlistId: String, newOrder: List<String>): Result<Unit> =
+        call("playlist:reorder") {
+            val moves = newOrder.withIndex()
+                .filter { it.index > 0 }
+                .map { it.value to newOrder[it.index - 1] }
+            Innertube.reorderPlaylist(playlistId, moves)
+        }
+
+    /**
      * Artist page. The landing page only lists ~5 songs, so the linked
      * "Top songs" playlist is fetched to fill the list out.
      */

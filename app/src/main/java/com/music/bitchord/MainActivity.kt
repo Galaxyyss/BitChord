@@ -1996,6 +1996,7 @@ private fun BitChordApp(
                                 null
                             },
                             songSort = songSort,
+                            onReorderComplete = { newOrder -> viewModel.reorderPlaylist(page.browseId, newOrder) },
                             contentPadding = listPadding,
                         )
                     } else when (key.removePrefix(TAB_KEY).toIntOrNull() ?: selectedTab) {

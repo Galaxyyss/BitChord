@@ -1130,6 +1130,28 @@ object Innertube {
         }
     }
 
+    /**
+     * Reorders tracks in a playlist by sending one `ACTION_SET_VIDEO_POSITION`
+     * per moved track. Each entry pairs the video id with the id of the track
+     * that should precede it in the new order (null = move to head).
+     *
+     * The endpoint is the same `browse/edit_playlist` used for add/remove; we
+     * batch all position changes in a single call so YT Music applies them
+     * atomically.
+     */
+    suspend fun reorderPlaylist(playlistId: String, moves: List<Pair<String, String?>>) {
+        if (moves.isEmpty()) return
+        editPlaylist(playlistId) {
+            moves.forEach { (videoId, beforeVideoId) ->
+                addJsonObject {
+                    put("action", "ACTION_SET_VIDEO_POSITION")
+                    put("movedVideoId", videoId)
+                    beforeVideoId?.let { put("setVideoId", it) }
+                }
+            }
+        }
+    }
+
     /** A fresh client-playback-nonce, identifying one play of one track. */
     fun newCpn(): String = (1..16).map { CPN_ALPHABET.random() }.joinToString("")
 

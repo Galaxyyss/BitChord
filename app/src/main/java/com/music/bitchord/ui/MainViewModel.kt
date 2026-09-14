@@ -546,6 +546,36 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Reorders tracks in a user-owned playlist on YT Music.
+     *
+     * Optimistic: the detail stack is updated first so the screen reflects the
+     * new order immediately; if the network call fails the stack is rolled back.
+     * Local AppSettings persistence is left to the UI layer so it survives even
+     * when the backend rejects the reorder — the next refresh will overwrite it.
+     */
+    fun reorderPlaylist(playlistId: String, newOrder: List<String>) {
+        if (!requireSignIn()) return
+        val previous = _detailStack.value.map { page ->
+            if (page.browseId != playlistId) return@map page
+            val songs = (page.songs as? UiState.Success)?.data ?: return@map page
+            page.copy(songs = UiState.Success(newOrder.mapNotNull { vid -> songs.find { it.videoId == vid } }))
+        }
+        _detailStack.value = previous
+        viewModelScope.launch {
+            val result = YtMusicRepository.reorderPlaylist(playlistId, newOrder)
+            if (result.isFailure) {
+                // Roll back the optimistic update.
+                _detailStack.value = _detailStack.value.map { page ->
+                    if (page.browseId != playlistId) return@map page
+                    val songs = previous.find { it.browseId == playlistId }
+                        ?.let { (it.songs as? UiState.Success)?.data }
+                    if (songs != null) page.copy(songs = UiState.Success(songs)) else page
+                }
+            }
+        }
+    }
+
     /** As [setSavedOnPage], for the artist header's subscribe button. */
     private fun setSubscribedOnPage(browseId: String, subscribed: Boolean) {
         _detailStack.value = _detailStack.value.map { page ->
