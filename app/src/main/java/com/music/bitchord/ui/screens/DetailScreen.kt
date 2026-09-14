@@ -3,8 +3,9 @@ package com.music.bitchord.ui.screens
 import com.music.bitchord.R
 
 import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
