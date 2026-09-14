@@ -63,7 +63,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.lazy.LazyListItemInfo
-import androidx.compose.ui.withFrameNanos
+import androidx.compose.runtime.withFrameNanos
+import kotlin.math.abs
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -601,9 +602,7 @@ fun DetailScreen(
                                     val now = withFrameNanos { it }
                                     val seconds = ((now - previous) / 1_000_000_000f).coerceAtMost(1f / 30f)
                                     previous = now
-                                    val scrolled = listState.scroll {
-                                        scrollBy(clampedSpeed * seconds)
-                                    }
+                                    val scrolled = listState.scrollBy(clampedSpeed * seconds)
                                     if (scrolled == 0f) break
                                 }
                             }
