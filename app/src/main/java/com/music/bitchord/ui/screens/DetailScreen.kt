@@ -142,10 +142,13 @@ private const val MAX_ARTIST_SONGS = 20
 private const val SONGS_PER_COLUMN = 4
 
 /** Edge zone for playlist reordering auto-scroll, in dp. */
-private val PLAYLIST_EDGE_SCROLL_ZONE = 40.dp
+private val PLAYLIST_EDGE_SCROLL_ZONE = 120.dp
 
-/** Auto-scroll speed for playlist reordering, in dp per second. */
-private val PLAYLIST_EDGE_SCROLL_SPEED = 340.dp
+/** Peak auto-scroll speed for playlist reordering, in dp per second. */
+private val PLAYLIST_EDGE_SCROLL_SPEED = 900.dp
+
+/** How far from the absolute edge the peak speed is reached (fraction of edge zone). */
+private val PLAYLIST_PEAK_ZONE_FRACTION = 0.3f
 
 /** The artist photo, very slightly taller than it is wide. */
 private const val ARTIST_PHOTO_RATIO = 0.95f
@@ -578,6 +581,7 @@ fun DetailScreen(
                             val isDragging = draggingIndex == index
                             val edgeZonePx = with(density) { PLAYLIST_EDGE_SCROLL_ZONE.toPx() }
                             val edgeSpeedPx = with(density) { PLAYLIST_EDGE_SCROLL_SPEED.toPx() }
+                            val peakZonePx = edgeZonePx * PLAYLIST_PEAK_ZONE_FRACTION
 
                             val scrollSpeed = if (isDragging) {
                                 val info = listState.layoutInfo.visibleItemsInfo.find { it.key == "track-${song.videoId}" }
@@ -594,8 +598,12 @@ fun DetailScreen(
                                         else -> 0f
                                     }
                                     if (reach == 0f) 0f else {
-                                        val ramp = abs(reach) / edgeZonePx
-                                        val speed = edgeSpeedPx * (0.2f + 0.8f * ramp.coerceAtMost(1f))
+                                        // Non-linear acceleration: quadratic ramp that reaches peak speed
+                                        // within PLAYLIST_PEAK_ZONE_FRACTION of the absolute edge.
+                                        val rawRamp = abs(reach) / edgeZonePx
+                                        val normalizedRamp = minOf(rawRamp, 1f)
+                                        // Quadratic curve: ramp^2 gives gentle start, sharp acceleration near edge
+                                        val speed = edgeSpeedPx * (normalizedRamp * normalizedRamp)
                                         if (reach < 0f) -speed else speed
                                     }
                                 }
