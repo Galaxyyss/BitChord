@@ -258,8 +258,8 @@ fun DetailScreen(
      * photo, not in this header.
      */
     songSort: SongSort = SongSort.DEFAULT,
-    /** Called with the final video-id order when edit mode exits or a drag completes. */
-    onReorderComplete: ((List<String>) -> Unit)? = null,
+    /** Called with (newOrder, previousOrder) when edit mode exits or a drag completes. */
+    onReorderComplete: ((List<String>, List<String>) -> Unit)? = null,
 ) {
     val rawSongs = (page.songs as? UiState.Success)?.data.orEmpty()
     val songs = remember(rawSongs, songSort) { rawSongs.sortedForDetail(songSort) }
@@ -324,7 +324,7 @@ fun DetailScreen(
         if (!isEditing && isPlaylist) {
             val videoIds = orderedSongs.map { it.videoId }
             AppSettings.setPlaylistTrackOrder(page.browseId, videoIds)
-            onReorderComplete?.invoke(videoIds)
+            onReorderComplete?.invoke(videoIds, playlistCustomOrder[page.browseId].orEmpty())
         }
     }
 
@@ -658,8 +658,9 @@ fun DetailScreen(
                                                 removeAt(fromIdx)
                                                 add(toIdx, newItem)
                                             }
+                                            val prevIds = playlistCustomOrder[page.browseId].orEmpty()
                                             AppSettings.setPlaylistTrackOrder(page.browseId, newList.map { it.videoId })
-                                            onReorderComplete?.invoke(newList.map { it.videoId })
+                                            onReorderComplete?.invoke(newList.map { it.videoId }, prevIds)
                                         }
                                         draggingIndex = -1
                                         dragOffsetY = 0f

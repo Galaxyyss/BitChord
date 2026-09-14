@@ -550,11 +550,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * Reorders tracks in a user-owned playlist on YT Music.
      *
      * Optimistic: the detail stack is updated first so the screen reflects the
-     * new order immediately; if the network call fails the stack is rolled back.
-     * Local AppSettings persistence is left to the UI layer so it survives even
-     * when the backend rejects the reorder — the next refresh will overwrite it.
+     * new order immediately; if the network call fails both the UI state and
+     * local AppSettings persistence are rolled back so they stay in sync.
      */
-    fun reorderPlaylist(playlistId: String, newOrder: List<String>) {
+    fun reorderPlaylist(playlistId: String, newOrder: List<String>, previousOrder: List<String> = emptyList()) {
         if (!requireSignIn()) return
         val previous = _detailStack.value.map { page ->
             if (page.browseId != playlistId) return@map page
@@ -565,12 +564,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val result = YtMusicRepository.reorderPlaylist(playlistId, newOrder)
             if (result.isFailure) {
-                // Roll back the optimistic update.
+                // Roll back both UI state and local AppSettings persistence.
                 _detailStack.value = _detailStack.value.map { page ->
                     if (page.browseId != playlistId) return@map page
                     val songs = previous.find { it.browseId == playlistId }
                         ?.let { (it.songs as? UiState.Success)?.data }
                     if (songs != null) page.copy(songs = UiState.Success(songs)) else page
+                }
+                // Restore local persistence to the order that was in place before this reorder attempt.
+                if (previousOrder.isNotEmpty()) {
+                    AppSettings.setPlaylistTrackOrder(playlistId.removePrefix("VL"), previousOrder)
                 }
             }
         }
