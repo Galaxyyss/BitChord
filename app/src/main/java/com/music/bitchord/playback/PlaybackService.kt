@@ -407,6 +407,22 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private val audioManager by lazy { getSystemService(AudioManager::class.java) }
+
+    /**
+     * The [AudioDeviceInfo] last handed to the player's route setter.
+     *
+     * `setPreferredAudioDevice` is expensive: it forces ExoPlayer to tear down
+     * and re-open its AudioTrack on the new sink, which briefly pauses audio
+     * while Android re-negotiates the hardware path.  Calling it with the same
+     * device (or null) that is already active does nothing useful but still
+     * triggers that full teardown — which is what made notifications flip
+     * music to the phone speaker for a couple of seconds.
+     *
+     * We gate on this field so we only call the setter when the actual target
+     * device has changed.
+     */
+    private var lastAppliedPreferredDevice: AudioDeviceInfo? = null
+
     private val outputDeviceCallback = object : AudioDeviceCallback() {
         override fun onAudioDevicesAdded(addedDevices: Array<AudioDeviceInfo>) {
             // Plugging something in moves the music to it. Always — a choice
@@ -4306,7 +4322,14 @@ class PlaybackService : MediaLibraryService() {
         // since been unplugged stops being the answer on its own.
         val chosen = AudioRouting.infoFor(manager, AudioRouting.selectedId.value)
         val preferred = chosen ?: usb.takeIf { AppSettings.preferUsbDac.value }
+
+        // Only re-route when the target device actually changed — avoids the
+        // brief speaker fallback that happens every time Android re-triggers
+        // output routing during a notification event.
+        if (preferred == lastAppliedPreferredDevice) return
         eachPlayer { it.setPreferredAudioDevice(preferred) }
+        lastAppliedPreferredDevice = preferred
+
         AudioOutputStatus.publish(
             manager = manager,
             requestedPcmMode = AppSettings.outputPcmMode.value,
