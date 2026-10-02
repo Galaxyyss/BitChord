@@ -28,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -94,7 +95,7 @@ internal fun LyricsProviderSheet(
                     },
                 ) {
                     Text(
-                        text = if (hideLyricsPreview) Res.string.unhide_lyrics_preview else Res.string.hide_lyrics_preview,
+                        text = stringResource(if (hideLyricsPreview) Res.string.unhide_lyrics_preview else Res.string.hide_lyrics_preview),
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }

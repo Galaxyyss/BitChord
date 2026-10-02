@@ -167,6 +167,7 @@ interface PlayerSettingsSource {
     val translationLanguage: StateFlow<String>
     val versionAlignmentInProgress: StateFlow<Boolean>
 
+    fun setHideLyricsPreview(value: Boolean)
     fun setLastPlayerScreen(value: LastPlayerScreen)
     fun setLyricsOffsetMs(value: Int)
 }

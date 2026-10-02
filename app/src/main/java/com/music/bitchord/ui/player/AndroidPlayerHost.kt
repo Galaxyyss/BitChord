@@ -78,6 +78,7 @@ class AndroidPlayerHost(context: Context) : PlayerHost {
         override val translationLanguage get() = AppSettings.translationLanguage
         override val versionAlignmentInProgress get() = AppSettings.versionAlignmentInProgress
 
+        override fun setHideLyricsPreview(value: Boolean) = AppSettings.setHideLyricsPreview(value)
         override fun setLastPlayerScreen(value: LastPlayerScreen) = AppSettings.setLastPlayerScreen(value)
         override fun setLyricsOffsetMs(value: Int) = AppSettings.setLyricsOffsetMs(value)
     }
