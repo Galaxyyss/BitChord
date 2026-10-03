@@ -10,6 +10,7 @@ import androidx.compose.ui.res.painterResource
 import coil3.ImageLoader
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
+import coil3.SingletonImageLoader
 import com.music.bitchord.R
 import com.music.bitchord.data.model.artworkAt
 import java.io.File
@@ -59,12 +60,12 @@ fun ArtworkImage(
         contentScale = contentScale,
         placeholder = placeholder ?: defaultPlaceholder,
         onError = { errorState ->
-            val e = errorState.result
+            val ctx = errorState.result.request.context
             // If we have a local file that failed to load and a remote fallback,
             // re-request with the remote URL so Coil fetches it.
             if (resolvedLocal != null && resolvedFallback != null) {
-                e.imageLoader.enqueue(
-                    coil3.request.ImageRequest.Builder(errorState.context)
+                SingletonImageLoader.get(ctx).enqueue(
+                    coil3.request.ImageRequest.Builder(ctx)
                         .data(resolvedFallback)
                         .build(),
                 )
@@ -94,10 +95,10 @@ fun RemoteArtworkImage(
         contentScale = contentScale,
         placeholder = painterResource(R.drawable.ic_logo),
         onError = { errorState ->
-            val e = errorState.result
+            val ctx = errorState.result.request.context
             if (fallbackUrl != null) {
-                e.imageLoader.enqueue(
-                    coil3.request.ImageRequest.Builder(errorState.context)
+                SingletonImageLoader.get(ctx).enqueue(
+                    coil3.request.ImageRequest.Builder(ctx)
                         .data(fallbackUrl)
                         .build(),
                 )
