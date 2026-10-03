@@ -5,10 +5,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import coil3.ImageLoader
 import coil3.compose.AsyncImage
-import coil3.request.ErrorResult
+import coil3.compose.AsyncImagePainter
 import com.music.bitchord.R
 import com.music.bitchord.data.model.artworkAt
 import java.io.File
@@ -28,7 +29,7 @@ fun ArtworkImage(
     fallbackUrl: String?,
     contentDescription: String?,
     modifier: Modifier = Modifier,
-    contentScale: coil3.compose.ContentScale = coil3.compose.ContentScale.Crop,
+    contentScale: ContentScale = ContentScale.Crop,
     placeholder: Painter? = null,
 ) {
     val resolvedLocal = remember(localUri) {
@@ -57,12 +58,13 @@ fun ArtworkImage(
         modifier = modifier,
         contentScale = contentScale,
         placeholder = placeholder ?: defaultPlaceholder,
-        onError = { e: ErrorResult ->
+        onError = { errorState ->
+            val e = errorState.result
             // If we have a local file that failed to load and a remote fallback,
             // re-request with the remote URL so Coil fetches it.
             if (resolvedLocal != null && resolvedFallback != null) {
-                e.result.imageLoader.enqueue(
-                    coil3.request.ImageRequest.Builder(e.context)
+                e.imageLoader.enqueue(
+                    coil3.request.ImageRequest.Builder(errorState.context)
                         .data(resolvedFallback)
                         .build(),
                 )
@@ -81,7 +83,7 @@ fun RemoteArtworkImage(
     fallbackUrl: String?,
     contentDescription: String?,
     modifier: Modifier = Modifier,
-    contentScale: coil3.compose.ContentScale = coil3.compose.ContentScale.Crop,
+    contentScale: ContentScale = ContentScale.Crop,
 ) {
     val sizedUrl = remember(url) { url?.artworkAt(120) ?: url }
 
@@ -91,10 +93,11 @@ fun RemoteArtworkImage(
         modifier = modifier,
         contentScale = contentScale,
         placeholder = painterResource(R.drawable.ic_logo),
-        onError = { e: ErrorResult ->
+        onError = { errorState ->
+            val e = errorState.result
             if (fallbackUrl != null) {
-                e.result.imageLoader.enqueue(
-                    coil3.request.ImageRequest.Builder(e.context)
+                e.imageLoader.enqueue(
+                    coil3.request.ImageRequest.Builder(errorState.context)
                         .data(fallbackUrl)
                         .build(),
                 )
