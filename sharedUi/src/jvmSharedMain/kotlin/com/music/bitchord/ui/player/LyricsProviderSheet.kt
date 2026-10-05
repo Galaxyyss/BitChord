@@ -20,7 +20,6 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -33,7 +32,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -41,8 +39,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.bitchord.sharedui.resources.*
 import com.music.bitchord.data.lyrics.LyricsSource
 import com.music.bitchord.ui.LyricsProviderState
-import com.music.bitchord.ui.haptics.Haptic
-import com.music.bitchord.ui.haptics.rememberHaptics
 import dev.chrisbanes.haze.HazeState
 
 /**
@@ -63,7 +59,6 @@ internal fun LyricsProviderSheet(
     modifier: Modifier = Modifier,
 ) {
     val savedOrder by PlayerSettings.lyricsSourceOrder.collectAsStateWithLifecycle()
-    val hideLyricsPreview by PlayerSettings.hideLyricsPreview.collectAsStateWithLifecycle()
     val sources = remember(savedOrder) {
         savedOrder + LyricsSource.entries.filterNot(savedOrder::contains)
     }
@@ -82,25 +77,6 @@ internal fun LyricsProviderSheet(
             modifier = Modifier.fillMaxWidth(),
             verticalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            // Hide/Unhide lyrics preview toggle, right-aligned above the provider list.
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End,
-            ) {
-                val haptics = rememberHaptics()
-                OutlinedButton(
-                    onClick = {
-                        haptics.play(Haptic.Select)
-                        PlayerSettings.setHideLyricsPreview(!hideLyricsPreview)
-                    },
-                ) {
-                    Text(
-                        text = stringResource(if (hideLyricsPreview) Res.string.unhide_lyrics_preview else Res.string.hide_lyrics_preview),
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                }
-            }
-
             sources.forEach { source ->
                 LyricsProviderRow(
                     source = source,
