@@ -40,6 +40,8 @@ import com.music.bitchord.sharedui.resources.*
 import com.music.bitchord.data.lyrics.LyricsSource
 import com.music.bitchord.ui.LyricsProviderState
 import dev.chrisbanes.haze.HazeState
+import com.music.bitchord.ui.haptics.Haptic
+import com.music.bitchord.ui.haptics.rememberHaptics
 
 /**
  * Manual provider chooser for the lyrics half-player.
