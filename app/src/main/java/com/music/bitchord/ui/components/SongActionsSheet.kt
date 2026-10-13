@@ -262,7 +262,10 @@ fun SongActionsSheet(
             GroupSeparator(palette)
         }
 
-        if (signedIn && !isOffline) {
+        // Guests get nothing to tap, since there's no account to record it
+        // against. Local/offline tracks can't be rated on YouTube's server,
+        // but the like state is still tracked locally via LikeState.
+        if (signedIn) {
             ActionRow(
                 icon = if (liked) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder,
                 label = if (liked) stringResource(R.string.remove_from_liked) else stringResource(R.string.like),

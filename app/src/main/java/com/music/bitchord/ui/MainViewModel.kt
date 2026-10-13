@@ -646,32 +646,44 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /**
      * Sets (or clears) the thumbs rating on [videoId].
      *
+     * For local/offline tracks ([isLocal=true]), the rating is persisted only
+     * locally via LikeState since there's no YouTube identity to rate on the
+     * server. For online tracks, the rating is synced to YTMusic.
+     *
      * Written to the screen first and rolled back if YouTube refuses. A rating
      * is a one-tap, low-stakes action taken while a song is playing; waiting
      * on a round trip before the heart fills reads as the tap not having
      * registered, and people tap again.
      */
-    fun setLike(videoId: String, status: LikeStatus) {
+    fun setLike(videoId: String, status: LikeStatus, isLocal: Boolean = false) {
         if (!requireSignIn()) return
         val previous = likeStatusOf(videoId)
         if (previous == status) return
         LikeState.set(videoId, status)
-        viewModelScope.launch {
-            YtMusicRepository.rate(videoId, status).fold(
-                onSuccess = {
-                    // Liked Music is now out of date either way.
-                    libraryStale = true
-                    if (status != LikeStatus.LIKE) dropFromLikedLists(videoId)
-                    // Clearing the heart means forgetting the song, not
-                    // demoting it — see [forgetFromLibrary].
-                    val unliked = previous == LikeStatus.LIKE &&
-                        status == LikeStatus.INDIFFERENT
-                    if (unliked) forgetFromLibrary(videoId)
-                },
-                onFailure = {
-                    LikeState.set(videoId, previous)
-                },
-            )
+        if (isLocal) {
+            // Local tracks can't be rated on YTMusic; persist locally only.
+            libraryStale = true
+            if (status != LikeStatus.LIKE) dropFromLikedLists(videoId)
+            val unliked = previous == LikeStatus.LIKE && status == LikeStatus.INDIFFERENT
+            if (unliked) forgetFromLibrary(videoId)
+        } else {
+            viewModelScope.launch {
+                YtMusicRepository.rate(videoId, status).fold(
+                    onSuccess = {
+                        // Liked Music is now out of date either way.
+                        libraryStale = true
+                        if (status != LikeStatus.LIKE) dropFromLikedLists(videoId)
+                        // Clearing the heart means forgetting the song, not
+                        // demoting it — see [forgetFromLibrary].
+                        val unliked = previous == LikeStatus.LIKE &&
+                            status == LikeStatus.INDIFFERENT
+                        if (unliked) forgetFromLibrary(videoId)
+                    },
+                    onFailure = {
+                        LikeState.set(videoId, previous)
+                    },
+                )
+            }
         }
     }
 
@@ -732,9 +744,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** The heart: liked becomes neutral, anything else becomes liked. */
-    fun toggleLike(videoId: String) = setLike(
+    fun toggleLike(videoId: String, isLocal: Boolean = false) = setLike(
         videoId,
         if (likeStatusOf(videoId) == LikeStatus.LIKE) LikeStatus.INDIFFERENT else LikeStatus.LIKE,
+        isLocal,
     )
 
     /** As [toggleLike], for the thumb-down. */
