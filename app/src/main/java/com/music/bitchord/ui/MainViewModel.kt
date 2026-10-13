@@ -662,10 +662,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         LikeState.set(videoId, status)
         if (isLocal) {
             // Local tracks can't be rated on YTMusic; persist locally only.
-            libraryStale = true
-            if (status != LikeStatus.LIKE) dropFromLikedLists(videoId)
-            val unliked = previous == LikeStatus.LIKE && status == LikeStatus.INDIFFERENT
-            if (unliked) forgetFromLibrary(videoId)
+            viewModelScope.launch {
+                libraryStale = true
+                if (status != LikeStatus.LIKE) dropFromLikedLists(videoId)
+                val unliked = previous == LikeStatus.LIKE && status == LikeStatus.INDIFFERENT
+                if (unliked) forgetFromLibrary(videoId)
+            }
         } else {
             viewModelScope.launch {
                 YtMusicRepository.rate(videoId, status).fold(
