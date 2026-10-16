@@ -187,9 +187,6 @@ import kotlin.math.roundToInt
  */
 internal const val ART_PX = PLAYER_ART_PX
 
-/** Default artwork crossfade duration matching ConvX's ambientTransitionMillis(0) = 1100ms. */
-private const val DEFAULT_ARTWORK_FADE_MS = 1100
-
 /**
  * Mirrors ConvX's [ambientTransitionMillis]: returns the artwork fade duration
  * in milliseconds. When automix crossfade is configured and running (crossfadeMs > 0),
@@ -197,7 +194,7 @@ private const val DEFAULT_ARTWORK_FADE_MS = 1100
  * Otherwise defaults to 1100ms.
  */
 private fun artworkFadeDurationMs(crossfadeMs: Long): Int =
-    if (crossfadeMs > 0) crossfadeMs.coerceIn(900, 8000).toInt() else DEFAULT_ARTWORK_FADE_MS
+    if (crossfadeMs > 0) crossfadeMs.coerceIn(900, 8000).toInt() else ArtworkCrossfade.DEFAULT_ARTWORK_FADE_MS
 
 /**
  * How many further goes a cover that failed to load gets.
@@ -1826,6 +1823,7 @@ fun NowPlayingScreen(
                                 durationMs = artworkFadeDurationMs(crossfadeMs),
                                 sleeveShape = landscapeArtShape,
                                 shadowFraction = dockT,
+                                canvas = canvas,
                                 modifier = Modifier
                                     .then(
                                         if (dock != null) {
@@ -1877,17 +1875,6 @@ fun NowPlayingScreen(
                                         closeLyrics()
                                     },
                             )
-                            // Canvas overlay — outside the crossfade so it is not recreated
-                            // on every track change.
-                            canvas?.let { clip ->
-                                CanvasArtworkPlayer(
-                                    canvas = clip,
-                                    isPlaying = isPlaying,
-                                    pausedForTransition = dockMoving,
-                                    onRenderedChanged = { canvasRendered = it },
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                            }
                             // The stats belong to the player, not to the sleeve, so
                             // they leave it along with the rest of the player.
                             SleeveNerdStats(
@@ -3022,34 +3009,29 @@ fun NowPlayingScreen(
                                         )
                                     }
                                 },
+                                canvasContent = if (!heroMode && canvas != null) {
+                                    {
+                                        WhileShown({ !collapsePastHalf }) {
+                                            CanvasArtworkPlayer(
+                                                canvas = canvas,
+                                                isPlaying = isPlaying,
+                                                pausedForTransition = lyricsOpen || queueOpen || queueDragging ||
+                                                    collapseStarted || dockMoving,
+                                                onRenderedChanged = { canvasRendered = it },
+                                                onFrameCaptured = {
+                                                    if (!tabletArtworkBackdrop && !lyricsOpen && !queueOpen) {
+                                                        canvasFrame = it
+                                                    }
+                                                },
+                                                refreshFrameEveryMs = if (
+                                                    tabletArtworkBackdrop || lyricsOpen || queueOpen || dockMoving
+                                                ) null else meshRefreshMs,
+                                                modifier = Modifier.fillMaxSize(),
+                                            )
+                                        }
+                                    }
+                                } else null,
                             )
-
-                            // Where the clip plays when it can't have the banner:
-                            // inside the same clip as the still art, taking the
-                            // sleeve's corners, shadow and paused shrink for free.
-                            if (!heroMode && canvas != null) {
-                                WhileShown({ !collapsePastHalf }) {
-                                    CanvasArtworkPlayer(
-                                        canvas = canvas,
-                                        isPlaying = isPlaying,
-                                        // The panels first: a collapse the tap asked
-                                        // for is paused from the tap, and then never
-                                        // asks after its first frame of movement.
-                                        pausedForTransition = lyricsOpen || queueOpen || queueDragging ||
-                                            collapseStarted || dockMoving,
-                                        onRenderedChanged = { canvasRendered = it },
-                                        onFrameCaptured = {
-                                            if (!tabletArtworkBackdrop && !lyricsOpen && !queueOpen) {
-                                                canvasFrame = it
-                                            }
-                                        },
-                                        refreshFrameEveryMs = if (
-                                            tabletArtworkBackdrop || lyricsOpen || queueOpen || dockMoving
-                                        ) null else meshRefreshMs,
-                                        modifier = Modifier.fillMaxSize(),
-                                    )
-                                }
-                            }
                         }
 
                         // The card's slot: where the sleeve sits as a card, whether or
