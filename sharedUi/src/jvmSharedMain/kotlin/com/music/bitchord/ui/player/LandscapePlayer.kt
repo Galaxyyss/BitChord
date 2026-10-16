@@ -273,6 +273,56 @@ internal fun LandscapePlayerLayout(
  * because its sleeve shrinks to a thumbnail behind a panel; this one never
  * shrinks.
  */
+
+/**
+ * Renders just the still image layer of a landscape sleeve: shadow box,
+ * placeholder icon, and AsyncImage — WITHOUT the canvas player overlay.
+ *
+ * Used by [LandscapeArtworkCrossfade] so that only the still image is
+ * wrapped in AnimatedContent; the canvas player stays outside and is not
+ * recreated on every track change.
+ */
+@Composable
+internal fun LandscapeStillImage(
+    artRequest: ImageRequest?,
+    sleeveShape: () -> Shape,
+    shadowFraction: () -> Float,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                shadowElevation = if (artRequest != null) 14.dp.toPx() * shadowFraction() else 0f
+                shape = sleeveShape()
+                clip = artRequest != null
+            }
+            .graphicsLayer {
+                shape = sleeveShape()
+                clip = true
+            }
+            .background(Color.Black.copy(alpha = 0.18f)),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (artRequest == null) {
+            Icon(
+                imageVector = BitChordIcons.MusicNote,
+                contentDescription = null,
+                tint = Color.White.copy(alpha = 0.35f),
+                modifier = Modifier.fillMaxSize(0.36f),
+            )
+        }
+        artRequest?.let { request ->
+            AsyncImage(
+                model = request,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+}
+
 @Composable
 internal fun LandscapeArtwork(
     artRequest: ImageRequest,
@@ -296,56 +346,20 @@ internal fun LandscapeArtwork(
 ) {
     val casts = artLoaded || canvasRendered
     Box(modifier = modifier) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                // What `.shadow` and then `.clip` laid down, asked for in the
-                // layers' own blocks so a docking player can move them
-                // without recomposing the sleeve.
-                //
-                // Only cast once there is a picture: on the flat placeholder
-                // tile a shadow reads as a second, darker square.
-                .graphicsLayer {
-                    shadowElevation = if (casts) 14.dp.toPx() * shadowFraction() else 0f
-                    shape = sleeveShape()
-                    // As `.shadow` did: it clips only when it casts.
-                    clip = casts
-                }
-                .graphicsLayer {
-                    shape = sleeveShape()
-                    clip = true
-                }
-                .background(Color.Black.copy(alpha = 0.18f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (!artLoaded && !canvasRendered) {
-                Icon(
-                    imageVector = BitChordIcons.MusicNote,
-                    contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.35f),
-                    modifier = Modifier.fillMaxSize(0.36f),
-                )
-            }
-            AsyncImage(
-                model = artRequest,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                onState = onArtState,
-                // Not drawn under a clip that got there first — see the
-                // portrait sleeve's note on TextureView stacking order.
-                modifier = Modifier
-                    .fillMaxSize()
-                    .drawWithContent { if (artLoaded || !canvasRendered) drawContent() },
+        LandscapeStillImage(
+            artRequest = if (artLoaded) artRequest else null,
+            sleeveShape = sleeveShape,
+            shadowFraction = shadowFraction,
+            modifier = Modifier.fillMaxSize(),
+        )
+        canvas?.let { clip ->
+            CanvasArtworkPlayer(
+                canvas = clip,
+                isPlaying = isPlaying,
+                pausedForTransition = pausedForTransition,
+                onRenderedChanged = onCanvasRenderedChange,
+                modifier = Modifier.fillMaxSize(),
             )
-            canvas?.let { clip ->
-                CanvasArtworkPlayer(
-                    canvas = clip,
-                    isPlaying = isPlaying,
-                    pausedForTransition = pausedForTransition,
-                    onRenderedChanged = onCanvasRenderedChange,
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
         }
         overlay()
     }

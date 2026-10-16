@@ -13,8 +13,10 @@ import com.music.bitchord.sharedui.resources.*
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.Animatable
@@ -141,6 +143,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import coil3.compose.LocalPlatformContext
+import coil3.request.ImageRequest
 import com.music.bitchord.ui.components.ExplicitBadge
 import com.music.bitchord.ui.theme.HideStatusBar
 import com.music.bitchord.ui.theme.StatusBarIcons
@@ -182,6 +186,9 @@ import kotlin.math.roundToInt
  * large home-screen widget asks for the same copy — see [PLAYER_ART_PX].
  */
 internal const val ART_PX = PLAYER_ART_PX
+
+/** Default artwork crossfade duration matching ConvX's ambientTransitionMillis(0) = 1100ms. */
+private const val DEFAULT_ARTWORK_FADE_MS = 1100
 
 /**
  * How many further goes a cover that failed to load gets.
@@ -1798,72 +1805,74 @@ fun NowPlayingScreen(
                         fullArtworkBlurContent(backgroundModifier.hazeSource(playerHaze))
                     },
                     artwork = { artworkModifier ->
-                        LandscapeArtwork(
-                            artRequest = art.request,
-                            artLoaded = art.loaded,
-                            onArtState = art::onState,
-                            canvas = canvas,
-                            canvasRendered = canvasRendered,
-                            isPlaying = isPlaying,
-                            onCanvasRenderedChange = { canvasRendered = it },
-                            // A clip decoding behind a player on its way to the
-                            // bar is work nobody sees — see [dockMoving].
-                            pausedForTransition = dockMoving,
-                            sleeveShape = landscapeArtShape,
-                            // Let go of on the way to the mini player, whose
-                            // cover sits flat in its bar.
-                            shadowFraction = dockT,
-                            modifier = artworkModifier
-                                .then(
-                                    if (dock != null) {
-                                        Modifier.onGloballyPositioned { dockFrame.landscapeArt = it }
-                                    } else {
-                                        Modifier
-                                    },
-                                )
-                                // While it docks the sleeve is drawn by the player
-                                // itself, over everything and outside the player's
-                                // fade — see [dockHost] — at the place and size
-                                // [landscapeDockPose] gives it.
-                                .drawWithContent {
-                                    val pose = if (docking()) landscapeDockPose() else null
-                                    if (pose != null) {
-                                        dockFrame.portalLeft = pose.left
-                                        dockFrame.portalTop = pose.top
-                                        dockFrame.portalScale = pose.scale
-                                        sleeveLayer.record { this@drawWithContent.drawContent() }
-                                    } else {
-                                        if (docking()) {
-                                            // Nowhere to fly to this frame: the
-                                            // portal draws nothing rather than a
-                                            // stale copy.
-                                            dockFrame.portalScale = 0f
+                        Box(modifier = artworkModifier) {
+                            LandscapeArtworkCrossfade(
+                                videoId = song.videoId,
+                                artRequest = if (art.loaded) art.request else null,
+                                sleeveShape = landscapeArtShape,
+                                shadowFraction = dockT,
+                                modifier = Modifier
+                                    .then(
+                                        if (dock != null) {
+                                            Modifier.onGloballyPositioned { dockFrame.landscapeArt = it }
+                                        } else {
+                                            Modifier
+                                        },
+                                    )
+                                    // While it docks the sleeve is drawn by the player
+                                    // itself, over everything and outside the player's
+                                    // fade — see [dockHost] — at the place and size
+                                    // [landscapeDockPose] gives it.
+                                    .drawWithContent {
+                                        val pose = if (docking()) landscapeDockPose() else null
+                                        if (pose != null) {
+                                            dockFrame.portalLeft = pose.left
+                                            dockFrame.portalTop = pose.top
+                                            dockFrame.portalScale = pose.scale
+                                            sleeveLayer.record { this@drawWithContent.drawContent() }
+                                        } else {
+                                            if (docking()) {
+                                                // Nowhere to fly to this frame: the
+                                                // portal draws nothing rather than a
+                                                // stale copy.
+                                                dockFrame.portalScale = 0f
+                                            }
+                                            drawContent()
                                         }
-                                        drawContent()
                                     }
-                                }
-                                .then(skipSwipeGesture)
-                                .graphicsLayer {
-                                    // The paused shrink and the swipe nudge are
-                                    // let go of on the way, as the portrait
-                                    // sleeve's are: the cover does neither.
-                                    val t = dockT()
-                                    val scale = if (t >= 1f) landscapeArtScale else 1f + (landscapeArtScale - 1f) * t
-                                    scaleX = scale
-                                    scaleY = scale
-                                    translationX = if (t >= 1f) swipeSettle.value else swipeSettle.value * t
-                                }
-                                // With a panel up the sleeve is the way back to
-                                // the player, as the portrait thumbnail is.
-                                .clickable(
-                                    enabled = panelOpen,
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = null,
-                                ) {
-                                    queueOpen = false
-                                    closeLyrics()
-                                },
-                        ) {
+                                    .then(skipSwipeGesture)
+                                    .graphicsLayer {
+                                        // The paused shrink and the swipe nudge are
+                                        // let go of on the way, as the portrait
+                                        // sleeve's are: the cover does neither.
+                                        val t = dockT()
+                                        val scale = if (t >= 1f) landscapeArtScale else 1f + (landscapeArtScale - 1f) * t
+                                        scaleX = scale
+                                        scaleY = scale
+                                        translationX = if (t >= 1f) swipeSettle.value else swipeSettle.value * t
+                                    }
+                                    // With a panel up the sleeve is the way back to
+                                    // the player, as the portrait thumbnail is.
+                                    .clickable(
+                                        enabled = panelOpen,
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                    ) {
+                                        queueOpen = false
+                                        closeLyrics()
+                                    },
+                            )
+                            // Canvas overlay — outside the crossfade so it is not recreated
+                            // on every track change.
+                            canvas?.let { clip ->
+                                CanvasArtworkPlayer(
+                                    canvas = clip,
+                                    isPlaying = isPlaying,
+                                    pausedForTransition = dockMoving,
+                                    onRenderedChanged = { canvasRendered = it },
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                            }
                             // The stats belong to the player, not to the sleeve, so
                             // they leave it along with the rest of the player.
                             SleeveNerdStats(
@@ -2974,44 +2983,28 @@ fun NowPlayingScreen(
                                     )
                                 }
                             }
-                            AsyncImage(
-                                // Decode at the sleeve's *expanded* size, always.
-                                // Coil otherwise sizes the decode to however large
-                                // this is when the request goes out — and changing
-                                // track from the queue does that while the sleeve is
-                                // collapsed to a thumbnail, leaving a thumbnail-sized
-                                // bitmap to be blown back up when the queue closes.
-                                // Skipping tracks with the transport keeps it sharp
-                                // only because the sleeve happens to be full size at
-                                // that moment.
-                                //
-                                // Asked for at the source's own size rather than the
-                                // sleeve's: the banner is taller than the card is
-                                // wide, and the one bitmap has to serve both shapes
-                                // with nothing to upscale between them.
-                                model = art.request,
-                                contentDescription = null,
-                                // Video thumbnails are 16:9; letterboxing them inside
-                                // the square sleeve looks like a broken frame.
-                                contentScale = ContentScale.Crop,
+                            ArtworkCrossfade(
+                                target = TrackArtRequest(song.videoId, art.request),
+                                durationMs = DEFAULT_ARTWORK_FADE_MS,
                                 onState = art::onState,
-                                // TextureView-backed canvas frames can arrive
-                                // before Coil has decoded the sleeve. Alpha alone
-                                // doesn't hide this layer for that window: a
-                                // TextureView composites through its own hardware
-                                // layer, and on some devices that layer wins the
-                                // stacking order against a sibling Compose layer
-                                // even when that layer's alpha is zero — so the
-                                // still image's empty placeholder still shows
-                                // through, above a perfectly healthy animated
-                                // cover. Skipping the draw call outright leaves
-                                // nothing there to composite, in the wrong order
-                                // or otherwise; the request stays mounted so
-                                // loading still finishes in the background and
-                                // [PlayerArtwork.loaded] still flips the moment it does.
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .drawWithContent { if (art.loaded || !canvasRendered) drawContent() },
+                                canvasRendered = canvasRendered,
+                                placeholder = {
+                                    // Placeholder tile: same as before, drawn inside the crossfade.
+                                    if (!art.loaded && !canvasRendered) {
+                                        Icon(
+                                            imageVector = BitChordIcons.MusicNote,
+                                            contentDescription = null,
+                                            tint = Color.White.copy(alpha = 0.35f),
+                                            modifier = Modifier
+                                                .size(40.dp)
+                                                .graphicsLayer {
+                                                    val scale = 1f - 0.5f * p()
+                                                    scaleX = scale
+                                                    scaleY = scale
+                                                },
+                                        )
+                                    }
+                                },
                             )
 
                             // Where the clip plays when it can't have the banner:
