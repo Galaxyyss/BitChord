@@ -17,6 +17,7 @@ import com.music.bitchord.data.settings.TransitionWindow
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * Everything the player takes from the application it is drawn in.
@@ -126,6 +127,9 @@ private val NoCast = MutableStateFlow(CastUi())
 
 private val NoWatch = MutableStateFlow(WatchOutputUi())
 
+/** Default crossfade duration: 0 (disabled) — overridden by AndroidPlayerHost. */
+private val _defaultCrossfadeDurationMs = MutableStateFlow(0L).asStateFlow()
+
 /** What the output drawer needs to draw the watch's row. */
 data class WatchOutputUi(
     /** A watch with BitChord on it is in reach. False (and not [active]) hides the row. */
@@ -186,7 +190,7 @@ interface PlayerSettingsSource {
     /** True only while an analysed Automix transition is audibly mixing two tracks. */
     val smartMixInProgress: StateFlow<Boolean>
     /** The configured automix crossfade duration in milliseconds (0 if disabled). */
-    val crossfadeDurationMs: StateFlow<Long>
+    val crossfadeDurationMs: StateFlow<Long> get() = _defaultCrossfadeDurationMs
     /** The Automix blend in flight, for the scrubber's beat glow; null between blends. */
     val smartMixBlend: StateFlow<MixBlend?>
     val smartTransitionWindow: StateFlow<TransitionWindow?>

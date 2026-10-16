@@ -20,7 +20,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ContentScale
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
@@ -40,7 +39,7 @@ private val CrossfadeEasing = CubicBezierEasing(0.37f, 0f, 0.63f, 1f)
 /**
  * Default fade duration matching ConvX's ambientTransitionMillis(0) = 1100ms.
  */
-private const val DEFAULT_DURATION_MS = 1100
+const val DEFAULT_ARTWORK_FADE_MS = 1100
 
 /**
  * Wraps an artwork image in a crossfade that fires when [target] changes.
@@ -61,14 +60,17 @@ private const val DEFAULT_DURATION_MS = 1100
  *   Used for TextureView stacking fix: skip drawing the outgoing image while a
  *   TextureView-backed canvas frame may still be compositing above it.
  * @param placeholder Optional composable drawn while both images are loading.
+ * @param canvasContent Optional composable for a canvas overlay inside the
+ *   crossfade — when provided, the outgoing canvas fades alongside the still.
  */
 @Composable
 internal fun ArtworkCrossfade(
     target: TrackArtRequest,
-    durationMs: Int = DEFAULT_DURATION_MS,
+    durationMs: Int = DEFAULT_ARTWORK_FADE_MS,
     onState: (AsyncImagePainter.State) -> Unit = {},
     canvasRendered: Boolean = false,
     placeholder: (@Composable () -> Unit)? = null,
+    canvasContent: (@Composable () -> Unit)? = null,
 ) {
     AnimatedContent(
         targetState = target,
@@ -105,6 +107,8 @@ internal fun ArtworkCrossfade(
                         .drawWithContent { if (artTarget.request != null || !canvasRendered) drawContent() },
                 )
             }
+            // Canvas overlay inside crossfade: fades alongside the still image.
+            canvasContent?.invoke()
         }
     }
 }
