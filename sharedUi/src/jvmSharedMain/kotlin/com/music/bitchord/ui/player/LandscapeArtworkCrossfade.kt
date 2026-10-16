@@ -41,6 +41,7 @@ private val CrossfadeEasing = CubicBezierEasing(0.37f, 0f, 0.63f, 1f)
  * @param videoId Stable track identity — keyed so URL upgrades within one song
  *   do not trigger a transition.
  * @param artRequest The current artwork image request (from PlayerArtwork).
+ * @param durationMs Fade duration in milliseconds (default 1100).
  * @param sleeveShape Shape of the landscape sleeve corners (lambda).
  * @param shadowFraction 0..1 controlling shadow intensity (lambda).
  * @param modifier Modifier to apply to the entire crossfade container.
@@ -49,6 +50,7 @@ private val CrossfadeEasing = CubicBezierEasing(0.37f, 0f, 0.63f, 1f)
 internal fun LandscapeArtworkCrossfade(
     videoId: String,
     artRequest: ImageRequest?,
+    durationMs: Int = DEFAULT_ARTWORK_FADE_MS,
     sleeveShape: () -> Shape,
     shadowFraction: () -> Float,
     modifier: Modifier = Modifier,
@@ -57,8 +59,8 @@ internal fun LandscapeArtworkCrossfade(
         targetState = TrackArtRequest(videoId, artRequest),
         contentKey = { it.videoId },
         transitionSpec = {
-            fadeIn(tween(DEFAULT_ARTWORK_FADE_MS, easing = CrossfadeEasing))
-                .togetherWith(fadeOut(tween(DEFAULT_ARTWORK_FADE_MS, easing = CrossfadeEasing)))
+            fadeIn(tween(durationMs, easing = CrossfadeEasing))
+                .togetherWith(fadeOut(tween(durationMs, easing = CrossfadeEasing)))
         },
         modifier = modifier,
         contentAlignment = Alignment.Center,

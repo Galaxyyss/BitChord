@@ -191,6 +191,15 @@ internal const val ART_PX = PLAYER_ART_PX
 private const val DEFAULT_ARTWORK_FADE_MS = 1100
 
 /**
+ * Mirrors ConvX's [ambientTransitionMillis]: returns the artwork fade duration
+ * in milliseconds. When automix crossfade is configured and running (crossfadeMs > 0),
+ * the artwork transition matches the audio crossfade duration, clamped to [900, 8000].
+ * Otherwise defaults to 1100ms.
+ */
+private fun artworkFadeDurationMs(crossfadeMs: Long): Int =
+    if (crossfadeMs > 0) crossfadeMs.coerceIn(900, 8000).toInt() else DEFAULT_ARTWORK_FADE_MS
+
+/**
  * How many further goes a cover that failed to load gets.
  *
  * Small on purpose. This is here for the connection that drops for a moment or
@@ -813,6 +822,7 @@ fun NowPlayingScreen(
     // track" check lives.
     val spotifyCanvasAutoHide by PlayerSettings.spotifyCanvasAutoHide.collectAsStateWithLifecycle()
     val mixing by PlayerSettings.smartMixInProgress.collectAsStateWithLifecycle()
+    val crossfadeMs by PlayerSettings.crossfadeDurationMs.collectAsStateWithLifecycle(0L)
     val canvas = rememberCanvasArtwork(song)
     var canvasAspect by remember(canvas) { mutableFloatStateOf(0f) }
     // Whether the clip actually has a frame on screen right now, and one of
@@ -1813,6 +1823,7 @@ fun NowPlayingScreen(
                             LandscapeArtworkCrossfade(
                                 videoId = song.videoId,
                                 artRequest = if (art.loaded) art.request else null,
+                                durationMs = artworkFadeDurationMs(crossfadeMs),
                                 sleeveShape = landscapeArtShape,
                                 shadowFraction = dockT,
                                 modifier = Modifier
@@ -2991,7 +3002,7 @@ fun NowPlayingScreen(
                             }
                             ArtworkCrossfade(
                                 target = TrackArtRequest(song.videoId, art.request),
-                                durationMs = DEFAULT_ARTWORK_FADE_MS,
+                                durationMs = artworkFadeDurationMs(crossfadeMs),
                                 onState = art::onState,
                                 canvasRendered = canvasRendered,
                                 placeholder = {
