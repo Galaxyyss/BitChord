@@ -1802,7 +1802,11 @@ fun NowPlayingScreen(
                     background = { backgroundModifier ->
                         // The whole screen is the sheets' frost source: there is
                         // no full-bleed banner here to be it instead.
-                        fullArtworkBlurContent(backgroundModifier.hazeSource(playerHaze))
+                        FullBleedBackdropCrossfade(
+                            videoId = song.videoId,
+                            blurredBitmap = fullArtworkBlurImage,
+                            modifier = backgroundModifier.hazeSource(playerHaze),
+                        )
                     },
                     artwork = { artworkModifier ->
                         Box(modifier = artworkModifier) {
@@ -2109,8 +2113,10 @@ fun NowPlayingScreen(
                         modifier = Modifier.graphicsLayer { alpha = 1f - fullArtworkBackdropAlpha },
                     )
                 }
-                fullArtworkBlurContent(
-                    Modifier.graphicsLayer { alpha = fullArtworkBackdropAlpha },
+                FullBleedBackdropCrossfade(
+                    videoId = song.videoId,
+                    blurredBitmap = fullArtworkBlurImage,
+                    modifier = Modifier.graphicsLayer { alpha = fullArtworkBackdropAlpha },
                 )
 
                 // Mount once, behind the controls. A known portrait aspect changes the
