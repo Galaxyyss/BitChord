@@ -2242,6 +2242,7 @@ class PlaybackService : MediaLibraryService() {
                 loudnessB.setBlendTrim(1f)
                 if (!smartAlignEnabled) {
                     AppSettings.smartMixInProgress.value = false
+                    AppSettings.incomingArtworkInfo.value = null
                 }
             }
             } finally {
@@ -5972,6 +5973,11 @@ class PlaybackService : MediaLibraryService() {
             if (preferredPrefetchRequest != request) return@launch
             warm(listOf(preferred) + upcomingSongs.drop(1))
         }
+
+        // Artwork prefetch: resolve remote URLs and pre-warm blur/mesh caches
+        // for upcoming tracks so they render instantly at track change.
+        val metered = AppSettings.meteredConnection.value
+        ArtworkPrefetcher.warmUp(applicationContext, upcomingSongs, AppSettings.incomingArtworkInfo.value, metered)
     }
 
     /** Stops both rendition selection and byte read-ahead, and makes resume retry. */

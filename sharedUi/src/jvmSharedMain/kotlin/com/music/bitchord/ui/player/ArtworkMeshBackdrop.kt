@@ -431,15 +431,19 @@ private fun DrawScope.drawMesh(mesh: ArtworkMesh, seamY: Float, alpha: Float) {
 private val FallbackBackdrop = Color(0xFF121212)
 
 /** A screen cannot recover detail discarded here; small is the performance feature. */
-private const val FULL_BLUR_SOURCE_PX = 128
-private const val FULL_BLUR_PASSES = 3
+internal const val FULL_BLUR_SOURCE_PX = 128
+internal const val FULL_BLUR_PASSES = 3
 
 /** A handful of recent covers; each entry is only 64 KiB at 128x128 ARGB. */
-private val fullBlurCache = object : LinkedHashMap<String, ImageBitmap>(0, 0.75f, true) {
+internal val fullBlurCache = object : LinkedHashMap<String, ImageBitmap>(0, 0.75f, true) {
     override fun removeEldestEntry(eldest: Map.Entry<String, ImageBitmap>) = size > 8
 }
 
-/** Three small box passes approximate a broad Gaussian blur at thumbnail scale. */
+/** A handful of recent covers; each entry is only 64 KiB at 128x128 ARGB. */
+private val meshCache = object : LinkedHashMap<String, ArtworkMesh>(0, 0.75f, true) {
+    override fun removeEldestEntry(eldest: Map.Entry<String, ArtworkMesh>) = size > MESH_CACHE_ENTRIES
+}
+
 private fun ImageBitmap.boxBlurred(passes: Int): ImageBitmap {
     val width = width
     val height = height
@@ -502,10 +506,6 @@ private fun boxBlurPass(
  * Clip frames never land here: the next one for the same URL is a different
  * picture, and there would be a new entry several times a second.
  */
-private val meshCache = object : LinkedHashMap<String, ArtworkMesh>(0, 0.75f, true) {
-    override fun removeEldestEntry(eldest: Map.Entry<String, ArtworkMesh>) = size > MESH_CACHE_ENTRIES
-}
-
 /** A session's worth of covers, at four kilobytes of texture each. */
 private const val MESH_CACHE_ENTRIES = 64
 

@@ -11,6 +11,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import com.music.bitchord.data.listentogether.ListenTogether
 import com.music.bitchord.data.settings.AppSettings
+import com.music.bitchord.ui.player.IncomingArtworkInfo
 import com.music.bitchord.data.settings.MixBlend
 import com.music.bitchord.data.settings.SmartAnalysis
 import com.music.bitchord.data.settings.TrackAnalysisState
@@ -704,6 +705,7 @@ class CrossfadeController(
         listeningTo = null
         active().volume = 1f
         AppSettings.smartMixInProgress.value = false
+        AppSettings.incomingArtworkInfo.value = null
         AppSettings.smartMixBlend.value = null
         filters.open()
         filters.parkEchoes()
@@ -811,6 +813,7 @@ class CrossfadeController(
             // otherwise sit on screen for as long as the party lasts.
             AppSettings.smartTransitionWindow.value = null
             AppSettings.smartMixInProgress.value = false
+            AppSettings.incomingArtworkInfo.value = null
             return
         }
         // Nothing to transition *into*, so any analysis state left over from the
@@ -906,6 +909,7 @@ class CrossfadeController(
         if (currentItem.isVideoOrigin || nextItem.isVideoOrigin) {
             AppSettings.smartTransitionWindow.value = null
             AppSettings.smartMixInProgress.value = false
+            AppSettings.incomingArtworkInfo.value = null
             return
         }
         val nextDuration = nextItemDurationMs(nextIndex, nextItem)
@@ -1455,6 +1459,17 @@ class CrossfadeController(
         // it for a frame otherwise.
         publishBlend(out, into, force = true)
         AppSettings.smartMixInProgress.value = isRealMix()
+        // Publish incoming artwork state before the mix flag: artwork layers in
+        // the UI read this to start their transition at mix time rather than
+        // waiting for the swap commit. The song is built from the incoming
+        // MediaItem using the same toSong() mapping as PlayerConnection.sync().
+        val incomingMediaItem = into.currentMediaItem
+        if (incomingMediaItem != null) {
+            AppSettings.incomingArtworkInfo.value = IncomingArtworkInfo(
+                song = incomingMediaItem.toSong(),
+                plannedMixDurationMs = fadeMs,
+            )
+        }
         // The bar fills to the end through the first half of the blend, which
         // would run straight over the marker for the transition now under way.
         AppSettings.smartTransitionWindow.value = null
@@ -1793,6 +1808,7 @@ class CrossfadeController(
         if (phase == Phase.IDLE || phase == Phase.BAILING) return
         Log.d(TAG, "bail from $phase")
         AppSettings.smartMixInProgress.value = false
+        AppSettings.incomingArtworkInfo.value = null
         AppSettings.smartMixBlend.value = null
         if (!handedOff && phase != Phase.FADING) {
             // Nothing was ever audible; no ramp to run.
@@ -1826,6 +1842,7 @@ class CrossfadeController(
             settledAt = SystemClock.elapsedRealtime()
         }
         AppSettings.smartMixInProgress.value = false
+        AppSettings.incomingArtworkInfo.value = null
         AppSettings.smartMixBlend.value = null
         // Before anything else: a transition that never handed off leaves the
         // outgoing player as the session, and it must not pause at the end of

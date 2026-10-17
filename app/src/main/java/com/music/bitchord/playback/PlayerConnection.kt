@@ -31,6 +31,7 @@ import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.model.artworkAt
 import com.music.bitchord.data.sources.SourceKind
 import com.music.bitchord.data.sources.SourceRegistry
+import com.music.bitchord.data.settings.AppSettings
 import com.music.bitchord.data.sources.SourceResolver
 import com.music.bitchord.data.sources.TrackMatcher
 import com.music.bitchord.download.Downloads
@@ -357,6 +358,23 @@ fun rememberPlayerState(controller: MediaController?): PlayerState {
                 isQualityUpgraded = item?.mediaMetadata?.extras
                     ?.getBoolean(EXTRA_QUALITY_UPGRADED) == true,
             )
+            // Guard for C3: if the mix completed (song updated) or was cancelled,
+            // clear incoming artwork info so it doesn't linger and cause a reverse
+            // transition when song flips again. Clear immediately on queue change
+            // or when the new song's videoId no longer matches the pending incoming.
+            if (rebuildQueue || refreshCurrentQueueItem) {
+                val currentVideoId = item?.mediaId
+                val pendingInfo = AppSettings.incomingArtworkInfo.value
+                if (pendingInfo != null && currentVideoId != null &&
+                    pendingInfo.song.videoId == currentVideoId
+                ) {
+                    // Swap committed: song now matches incoming — clear.
+                    AppSettings.incomingArtworkInfo.value = null
+                } else if (pendingInfo != null && queueChanged) {
+                    // Queue changed / mix cancelled — clear immediately.
+                    AppSettings.incomingArtworkInfo.value = null
+                }
+            }
         }
 
         val listener = object : Player.Listener {

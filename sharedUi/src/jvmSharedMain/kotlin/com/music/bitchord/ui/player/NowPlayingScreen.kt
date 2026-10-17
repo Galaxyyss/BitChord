@@ -188,13 +188,27 @@ import kotlin.math.roundToInt
 internal const val ART_PX = PLAYER_ART_PX
 
 /**
- * Mirrors ConvX's [ambientTransitionMillis]: returns the artwork fade duration
- * in milliseconds. When automix crossfade is configured and running (crossfadeMs > 0),
- * the artwork transition matches the audio crossfade duration, clamped to [900, 8000].
- * Otherwise defaults to 1100ms.
+ * Returns the artwork fade duration in milliseconds.
+ *
+ * Mix active (incomingArtworkInfo non-null): use the planned mix duration,
+ * clamped to ConvX's melt bounds [450, 8_000] — the shader overlay reads
+ * these limits directly from Thumbnail.kt:946.
+ *
+ * No mix: 1100ms (ConvX AMBIENT_TRANSITION_DEFAULT_MS), because ConvX sets
+ * _crossfadeDurationMs to 0L on skips, and ambientTransitionMillis(0) returns
+ * the default. This fixes the bug where the configured crossfade was applied
+ * to skips too.
  */
-private fun artworkFadeDurationMs(crossfadeMs: Long): Int =
-    if (crossfadeMs > 0) crossfadeMs.coerceIn(900, 8000).toInt() else DEFAULT_ARTWORK_FADE_MS
+private fun artworkFadeDurationMs(
+    crossfadeMs: Long,
+    incomingArtworkInfo: IncomingArtworkInfo?,
+): Int = if (incomingArtworkInfo != null) {
+    // Mix is active — use the planned mix duration with ConvX's melt bounds.
+    incomingArtworkInfo.plannedMixDurationMs.coerceIn(450, 8_000).toInt()
+} else {
+    // No mix (skip or natural end) — fixed default.
+    DEFAULT_ARTWORK_FADE_MS
+}
 
 /**
  * How many further goes a cover that failed to load gets.
@@ -758,11 +772,22 @@ fun NowPlayingScreen(
 ) {
     val density = LocalDensity.current
     val haptics = rememberHaptics()
+    // Incoming artwork state: non-null during an active mix, carries the incoming
+    // song and planned duration so artwork layers can switch to it at mix start.
+    val incomingArtworkInfo by PlayerSettings.incomingArtworkInfo.collectAsStateWithLifecycle(null)
 
     // Remote tracks whose art lives inside the file resolve it here, once —
     // every surface below reads the same value rather than each triggering
     // its own extraction.
     val remoteArt = rememberRemoteArtworkUrl(song)
+    // Derive artworkSong: use the incoming track during a mix so artwork layers
+    // (sleeve, backdrop, canvas, palette) transition at mix time rather than after
+    // the swap commit. When null, fall back to the current song.
+    val artworkSong = incomingArtworkInfo?.song ?: song
+    // During a mix, artwork layers use the incoming song so they transition at
+    // mix time. Keyed on artworkSong.videoId so it updates when incoming info
+    // appears/disappears, not on every recomposition.
+    val artworkRemoteArt = rememberRemoteArtworkUrl(artworkSong)
     // This is produced by the palette's existing 128 px decode and cache. It
     // samples the upper band rather than the whole sleeve because that is what
     // lies beneath the status bar when the player expands to full bleed.
@@ -1253,6 +1278,9 @@ fun NowPlayingScreen(
     // never fires again. Keyed on the cover there is nothing to reset: the
     // bitmap really is still loaded, so the state stays true.
     val art = rememberPlayerArtwork(remoteArt)
+    // During a mix, the artwork layer for transitions uses the incoming song's
+    // artwork state so it fades from outgoing to incoming at mix time.
+    val artworkArt = rememberPlayerArtwork(artworkRemoteArt)
     // Sticky, unlike [PlayerArtwork.loaded]: the banner is the shape of the player rather
     // than a property of the track in it. Waiting on each new cover would
     // collapse the banner into a card and blow it back out on every skip —
@@ -1818,9 +1846,9 @@ fun NowPlayingScreen(
                     artwork = { artworkModifier ->
                         Box(modifier = artworkModifier) {
                             LandscapeArtworkCrossfade(
-                                videoId = song.videoId,
+                                videoId = artworkSong.videoId,
                                 artRequest = if (art.loaded) art.request else null,
-                                durationMs = artworkFadeDurationMs(crossfadeMs),
+                                durationMs = artworkFadeDurationMs(crossfadeMs, incomingArtworkInfo),
                                 sleeveShape = landscapeArtShape,
                                 shadowFraction = dockT,
                                 canvas = canvas,
@@ -2988,9 +3016,9 @@ fun NowPlayingScreen(
                                 }
                             }
                             ArtworkCrossfade(
-                                target = TrackArtRequest(song.videoId, art.request),
-                                durationMs = artworkFadeDurationMs(crossfadeMs),
-                                onState = art::onState,
+                                target = TrackArtRequest(artworkSong.videoId, artworkArt.request),
+                                durationMs = artworkFadeDurationMs(crossfadeMs, incomingArtworkInfo),
+                                onState = artworkArt::onState,
                                 canvasRendered = canvasRendered,
                                 placeholder = {
                                     // Placeholder tile: same as before, drawn inside the crossfade.

@@ -20,7 +20,19 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Everything the player takes from the application it is drawn in.
+ * Artwork transition metadata: the incoming song and its planned mix duration.
+ * Carried from [CrossfadeController] startBlend into the UI so artwork layers
+ * can switch to it before [song] updates on the swap commit. Lives here in
+ * sharedUi so the UI can read it without depending on the app module.
+ */
+data class IncomingArtworkInfo(
+    /** The incoming song, built from the MediaItem via the same toSong() mapping as PlayerConnection.sync(). */
+    val song: Song,
+    /** Planned mix duration in milliseconds — the value that drives the artwork transition length. */
+    val plannedMixDurationMs: Long,
+)
+
+/**
  *
  * The player itself — its layout, its gestures, its animations, the lyric sheet
  * and the queue — is one piece of code for the phone and the desktop alike.
@@ -129,6 +141,7 @@ private val NoWatch = MutableStateFlow(WatchOutputUi())
 
 /** Default crossfade duration: 0 (disabled) — overridden by AndroidPlayerHost. */
 private val _defaultCrossfadeDurationMs = MutableStateFlow(0L).asStateFlow()
+private val _defaultIncomingArtworkInfo = MutableStateFlow(null as IncomingArtworkInfo?).asStateFlow()
 
 /** What the output drawer needs to draw the watch's row. */
 data class WatchOutputUi(
@@ -189,6 +202,9 @@ interface PlayerSettingsSource {
     val smartFadeEnabled: StateFlow<Boolean>
     /** True only while an analysed Automix transition is audibly mixing two tracks. */
     val smartMixInProgress: StateFlow<Boolean>
+    /** Artwork transition state: carries incoming song + planned duration at mix start. */
+    val incomingArtworkInfo: StateFlow<IncomingArtworkInfo?>
+    get() = _defaultIncomingArtworkInfo
     /** The configured automix crossfade duration in milliseconds (0 if disabled). */
     val crossfadeDurationMs: StateFlow<Long> get() = _defaultCrossfadeDurationMs
     /** The Automix blend in flight, for the scrubber's beat glow; null between blends. */
