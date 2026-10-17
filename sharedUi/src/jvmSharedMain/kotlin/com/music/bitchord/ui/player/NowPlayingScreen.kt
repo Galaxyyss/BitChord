@@ -2148,80 +2148,85 @@ fun NowPlayingScreen(
                 // Mount once, behind the controls. A known portrait aspect changes the
                 // invisible view to full-player bounds before its first frame is shown.
                 if (heroMode && heroHeight > 0.dp) {
-                    heroClipMounted?.let { clip ->
-                        CanvasArtworkPlayer(
-                            canvas = clip,
-                            isPlaying = isPlaying,
-                            // Paused for the whole collapse into the queue/lyrics panel
-                            // and back, not just once it hands off to the still frame at
-                            // p >= 0.5 — see [CanvasArtworkPlayer.pausedForTransition].
-                            // And for the whole trip to or from the mini player.
-                            //
-                            // The panels asked first: a collapse a tap asked for is
-                            // paused from the tap, and this screen doesn't then listen
-                            // for the sleeve's first frame of movement as well.
-                            pausedForTransition = lyricsOpen || queueOpen || queueDragging ||
-                                collapseStarted || dockMoving,
-                            // Spotify's 9:16 Canvas is the phone background, so it
-                            // covers every edge. Other providers retain the contained
-                            // portrait treatment introduced for motion cover art.
-                            contentMode = if (clipFullscreen) {
-                                CanvasContentMode.CROP
-                            } else {
-                                CanvasContentMode.FIT_PORTRAIT
-                            },
-                            alignPortraitTop = clipPortrait,
-                            onAspectRatioChanged = { canvasAspect = it },
-                            portraitRevealBounds = playerBounds,
-                            // Gone by the half, where [heroClip] lets it go — and the
-                            // still sleeve collapsing over it takes exactly the cover
-                            // this gives up, so the two never leave a gap or a pop
-                            // between them.
-                            // And with the rest of the player as it docks: a
-                            // TextureView doesn't reliably take the fade from a
-                            // Compose layer around it.
-                            presentationAlpha = { (1f - 2f * p()).coerceIn(0f, 1f) * dockFade() },
-                            onRenderedChanged = { canvasRendered = it },
-                            onFrameCaptured = {
-                                if (!clipFullscreen && !tabletArtworkBackdrop &&
-                                    !lyricsOpen && !queueOpen && !queueDragging
-                                ) canvasFrame = it
-                            },
-                            // The full-screen Spotify video has no mesh to re-tint.
-                            // Keeping this null also removes the old three-second GPU
-                            // readback cadence from this provider alone.
-                            refreshFrameEveryMs = if (
-                                clipFullscreen || tabletArtworkBackdrop || lyricsOpen || queueOpen ||
-                                queueDragging || dockMoving
-                            ) {
-                                null
-                            } else {
-                                meshRefreshMs
-                            },
-                            onCoverChanged = { canvasCover.floatValue = it },
-                            bottomFade = when {
-                                clipFullscreen -> 0f
-                                clipPortrait -> clipFadeFraction
-                                else -> HERO_FADE_FRACTION
-                            },
-                            bottomFadeEndPx = if (clipPortrait) with(density) { clipBottom.toPx() }
-                                else null,
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .then(
-                                    if (clipFullscreen || clipPortrait) Modifier.fillMaxSize()
-                                    else Modifier.fillMaxWidth().height(heroHeight),
-                                )
-                                .hazeSource(playerHaze),
-                        )
+                    AnimatedContent(
+                        targetState = heroClipMounted,
+                        transitionSpec = {
+                            (fadeIn() + slideInVertically { it / 4 }).togetherWith(
+                                fadeOut() + slideOutVertically { -it / 4 },
+                            )
+                        },
+                        label = "heroCanvasCrossfade",
+                    ) { clip ->
+                        clip?.let { c ->
+                            CanvasArtworkPlayer(
+                                canvas = c,
+                                isPlaying = isPlaying,
+                                // Paused for the whole collapse into the queue/lyrics panel
+                                // and back, not just once it hands off to the still frame at
+                                // p >= 0.5 — see [CanvasArtworkPlayer.pausedForTransition].
+                                // And for the whole trip to or from the mini player.
+                                //
+                                // The panels asked first: a collapse a tap asked for is
+                                // paused from the tap, and this screen doesn't then listen
+                                // for the sleeve's first frame of movement as well.
+                                pausedForTransition = lyricsOpen || queueOpen || queueDragging ||
+                                    collapseStarted || dockMoving,
+                                // Spotify's 9:16 Canvas is the phone background, so it
+                                // covers every edge. Other providers retain the contained
+                                // portrait treatment introduced for motion cover art.
+                                contentMode = if (clipFullscreen) {
+                                    CanvasContentMode.CROP
+                                } else {
+                                    CanvasContentMode.FIT_PORTRAIT
+                                },
+                                alignPortraitTop = clipPortrait,
+                                onAspectRatioChanged = { canvasAspect = it },
+                                portraitRevealBounds = playerBounds,
+                                // Gone by the half, where [heroClip] lets it go — and the
+                                // still sleeve collapsing over it takes exactly the cover
+                                // this gives up, so the two never leave a gap or a pop
+                                // between them.
+                                // And with the rest of the player as it docks: a
+                                // TextureView doesn't reliably take the fade from a
+                                // Compose layer around it.
+                                presentationAlpha = { (1f - 2f * p()).coerceIn(0f, 1f) * dockFade() },
+                                onRenderedChanged = { canvasRendered = it },
+                                onFrameCaptured = {
+                                    if (!clipFullscreen && !tabletArtworkBackdrop &&
+                                        !lyricsOpen && !queueOpen && !queueDragging
+                                    ) canvasFrame = it
+                                },
+                                // The full-screen Spotify video has no mesh to re-tint.
+                                // Keeping this null also removes the old three-second GPU
+                                // readback cadence from this provider alone.
+                                refreshFrameEveryMs = if (
+                                    clipFullscreen || tabletArtworkBackdrop || lyricsOpen || queueOpen ||
+                                    queueDragging || dockMoving
+                                ) {
+                                    null
+                                } else {
+                                    meshRefreshMs
+                                },
+                                onCoverChanged = { canvasCover.floatValue = it },
+                                bottomFade = when {
+                                    clipFullscreen -> 0f
+                                    clipPortrait -> clipFadeFraction
+                                    else -> HERO_FADE_FRACTION
+                                },
+                                bottomFadeEndPx = if (clipPortrait) with(density) { clipBottom.toPx() }
+                                    else null,
+                                modifier = Modifier
+                                    .align(Alignment.TopStart)
+                                    .then(
+                                        if (clipFullscreen || clipPortrait) Modifier.fillMaxSize()
+                                        else Modifier.fillMaxWidth().height(heroHeight),
+                                    )
+                                    .hazeSource(playerHaze),
+                            )
+                        }
                     }
                 }
 
-                // This transparent top gradient is always present while the modal
-                // player owns the system bar. Its opacity follows the actual top-band
-                // artwork, rather than changing the status-bar glyph colour per cover.
-                // A subview replaces that hero with an artwork-derived mesh, so it gets
-                // only a modest floor rather than an opaque status-bar surface.
                 val playerSubviewOpen = lyricsOpen || queueOpen || lyricsOffsetOpen ||
                     showAudioPipeline || showCast || showAudioOutput || showLyricsProviders ||
                     lyricsShare != null
@@ -2230,7 +2235,6 @@ fun NowPlayingScreen(
                 } else {
                     artworkStatusScrimAlpha
                 }
-
                 val steps = 8
                 val gradientColors = remember(topGradientAlpha) {
                     List(steps) { index ->
