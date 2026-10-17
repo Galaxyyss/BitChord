@@ -11,6 +11,7 @@ import com.music.bitchord.playback.PlaybackPosition
 import com.music.bitchord.sharedui.resources.*
 
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.AnimatedContent
@@ -143,6 +144,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import coil3.compose.AsyncImagePainter
+import coil3.toBitmap
 import coil3.compose.LocalPlatformContext
 import coil3.request.ImageRequest
 import com.music.bitchord.ui.components.ExplicitBadge
@@ -1281,6 +1284,9 @@ fun NowPlayingScreen(
     // During a mix, the artwork layer for transitions uses the incoming song's
     // artwork state so it fades from outgoing to incoming at mix time.
     val artworkArt = rememberPlayerArtwork(artworkRemoteArt)
+    // Bitmaps captured from AsyncImage onState for the melt overlay.
+    var artBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+    var artworkArtBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     // Sticky, unlike [PlayerArtwork.loaded]: the banner is the shape of the player rather
     // than a property of the track in it. Waiting on each new cover would
     // collapse the banner into a card and blow it back out on every skip —
@@ -2227,6 +2233,18 @@ fun NowPlayingScreen(
                     }
                 }
 
+                // ConvX-style melt overlay: runs on Android when both outgoing and incoming
+                // artwork are loaded during a mix transition.
+                if (LocalArtworkTransitionRendererDefault.current.supportsMelt && art.loaded && artworkArt.loaded) {
+                    LocalArtworkTransitionRendererDefault.current.TransitionOverlay(
+                        frame = ArtworkTransitionFrame(
+                            outgoing = artBitmap,
+                            incoming = artworkArtBitmap,
+                            progress = 0f,
+                        ),
+                        durationMs = artworkFadeDurationMs(crossfadeMs, incomingArtworkInfo).toInt(),
+                    ) {}
+                }
                 val playerSubviewOpen = lyricsOpen || queueOpen || lyricsOffsetOpen ||
                     showAudioPipeline || showCast || showAudioOutput || showLyricsProviders ||
                     lyricsShare != null
@@ -3022,7 +3040,12 @@ fun NowPlayingScreen(
                             ArtworkCrossfade(
                                 target = TrackArtRequest(artworkSong.videoId, artworkArt.request),
                                 durationMs = artworkFadeDurationMs(crossfadeMs, incomingArtworkInfo),
-                                onState = artworkArt::onState,
+                                onState = { state ->
+                                    artworkArt.onState(state)
+                                    if (state is AsyncImagePainter.State.Success) {
+                                        artworkArtBitmap = state.result.image.toBitmap().asImageBitmap()
+                                    }
+                                },
                                 canvasRendered = canvasRendered,
                                 placeholder = {
                                     // Placeholder tile: same as before, drawn inside the crossfade.
