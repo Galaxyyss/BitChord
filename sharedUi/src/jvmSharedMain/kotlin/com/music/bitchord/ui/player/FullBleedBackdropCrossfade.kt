@@ -23,7 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
-import com.music.bitchord.ui.player.ArtworkCrossfade.DEFAULT_ARTWORK_FADE_MS
+import com.music.bitchord.ui.player.DEFAULT_ARTWORK_FADE_MS
 
 /**
  * Easing matching ConvX's SeamlessEasing: CubicBezierEasing(0.37f, 0f, 0.63f, 1f).

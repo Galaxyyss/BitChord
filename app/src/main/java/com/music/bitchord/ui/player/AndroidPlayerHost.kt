@@ -73,7 +73,7 @@ class AndroidPlayerHost(context: Context) : PlayerHost {
         override val smartAnalysis get() = AppSettings.smartAnalysis
         override val smartFadeEnabled get() = AppSettings.smartFadeEnabled
         override val smartMixInProgress get() = AppSettings.smartMixInProgress
-        override val crossfadeDurationMs get() = AppSettings.crossfadeSeconds.map { it.toLong() * 1000L }.stateIn(AppSettings.applicationScope, SharingStarted.Eagerly, 0L)
+        override val crossfadeDurationMs get() = AppSettings.crossfadeSeconds.map { it.toLong() * 1000L }.stateIn(scope, SharingStarted.Eagerly, 0L)
         override val smartMixBlend get() = AppSettings.smartMixBlend
         override val smartTransitionWindow get() = AppSettings.smartTransitionWindow
         override val spotifyCanvasAutoHide get() = AppSettings.spotifyCanvasAutoHide

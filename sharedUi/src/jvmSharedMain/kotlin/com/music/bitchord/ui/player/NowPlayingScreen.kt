@@ -194,7 +194,7 @@ internal const val ART_PX = PLAYER_ART_PX
  * Otherwise defaults to 1100ms.
  */
 private fun artworkFadeDurationMs(crossfadeMs: Long): Int =
-    if (crossfadeMs > 0) crossfadeMs.coerceIn(900, 8000).toInt() else ArtworkCrossfade.DEFAULT_ARTWORK_FADE_MS
+    if (crossfadeMs > 0) crossfadeMs.coerceIn(900, 8000).toInt() else DEFAULT_ARTWORK_FADE_MS
 
 /**
  * How many further goes a cover that failed to load gets.
