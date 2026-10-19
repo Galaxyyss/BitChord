@@ -1924,9 +1924,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _suggestions.value = emptyList()
         _typeaheadResults.value = emptyList()
         // Picking a suggestion or history item is deliberate, but it must NOT
-        // pollute the user's YTMusic server-side search history — only an
-        // explicit keyboard submission should do that.  Use the anonymous
-        // endpoint so YouTube does not log this query against the account.
+        // pollute the user's YTMusic server-side search history — no searches
+        // are ever logged to the account. Use the anonymous endpoint so YouTube
+        // does not record this query against the account.
         runSearch(anonymous = true)
     }
 
@@ -1974,7 +1974,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             runAddonSearch(q)
             return
         }
-        runSearch(anonymous = false)
+        runSearch(anonymous = true)
     }
 
     /**
@@ -2137,7 +2137,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _results.value = cached?.let { UiState.Success(it) } ?: UiState.Loading
                 // An explicit submit still has to reach the server even when
                 // an anonymous lookup cached the same query: that call is what
-                // records it in the account's history.
+                // records it in the account's history — but now all searches use
+                // the anonymous path, so no search ever pollutes the account.
                 if (exact != null && request.anonymous) {
                     searchSession = SearchSession(key, request.requestId, request.filter, exact.continuation)
                     return@collectLatest
