@@ -777,11 +777,14 @@ object YtMusicRepository {
      * nobody is watching — the library sync, an artist's back catalogue. For
      * anything a screen is waiting on, use [browseSongs] and [moreSongs].
      */
+    private suspend fun songsPaged(browseId: String): List<Song> =
+        fetchSongsPaged(browseId) { it.videoId }
+
     /**
      * Paginate a browse ID until the API runs out of pages or we hit [MAX_PAGES].
      * [keyOf] determines deduplication — pass { it.videoId } for the normal view,
      * { it.setVideoId } for playlist-reorder entries.  Insertion order is preserved
-     * (LinkedHashMap), so the first occurrence of each key wins.
+     * (LinkedHashMap), so the last occurrence of each key wins.
      */
     private suspend fun fetchSongsPaged(
         browseId: String,
@@ -800,7 +803,7 @@ object YtMusicRepository {
             // shelf so a trailing "Suggested tracks" shelf never joins in.
             val shelf = InnertubeParser.parsePlaylistShelf(response)
             (shelf?.songs ?: InnertubeParser.collectSongsDeep(response)).forEach { song ->
-                keyOf(song)?.let { k -> out.putIfAbsent(k, song) }
+                keyOf(song)?.let { k -> out[k] = song }
             }
             val token = shelf?.continuation ?: InnertubeParser.continuationToken(response)
             if (token == null || page++ >= MAX_PAGES) break
@@ -808,9 +811,6 @@ object YtMusicRepository {
         }
         return out.values.toList()
     }
-
-    private suspend fun songsPaged(browseId: String): List<Song> =
-        fetchSongsPaged(browseId) { it.videoId }
 
     /**
      * Every saved library card behind a feed browse id, following continuations.
@@ -977,8 +977,8 @@ object YtMusicRepository {
      * in — would send the last row it has "to the end" past rows it never saw.
      */
     suspend fun playlistEntries(browseId: String): Result<List<Song>> = call("entries:$browseId") {
+        // keyOf returning null drops rows without a setVideoId (suggestion rows)
         fetchSongsPaged(browseId) { it.setVideoId }
-            .filterNot { it.setVideoId == null }
     }
 
     /**
