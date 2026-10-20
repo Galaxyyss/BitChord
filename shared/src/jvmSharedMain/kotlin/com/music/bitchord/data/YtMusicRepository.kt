@@ -777,7 +777,16 @@ object YtMusicRepository {
      * nobody is watching — the library sync, an artist's back catalogue. For
      * anything a screen is waiting on, use [browseSongs] and [moreSongs].
      */
-    private suspend fun songsPaged(browseId: String): List<Song> {
+    /**
+     * Paginate a browse ID until the API runs out of pages or we hit [MAX_PAGES].
+     * [keyOf] determines deduplication — pass { it.videoId } for the normal view,
+     * { it.setVideoId } for playlist-reorder entries.  Insertion order is preserved
+     * (LinkedHashMap), so the first occurrence of each key wins.
+     */
+    private suspend fun fetchSongsPaged(
+        browseId: String,
+        keyOf: (Song) -> String?,
+    ): List<Song> {
         val out = LinkedHashMap<String, Song>()
         var response = Innertube.browse(browseId)
         if (browseId.startsWith("MPREb")) {
@@ -790,13 +799,18 @@ object YtMusicRepository {
             // Library Songs auto-playlist included) is read from its own
             // shelf so a trailing "Suggested tracks" shelf never joins in.
             val shelf = InnertubeParser.parsePlaylistShelf(response)
-            (shelf?.songs ?: InnertubeParser.collectSongsDeep(response)).forEach { out[it.videoId] = it }
+            (shelf?.songs ?: InnertubeParser.collectSongsDeep(response)).forEach { song ->
+                keyOf(song)?.let { k -> out.putIfAbsent(k, song) }
+            }
             val token = shelf?.continuation ?: InnertubeParser.continuationToken(response)
             if (token == null || page++ >= MAX_PAGES) break
             response = runCatching { Innertube.browseContinuation(token) }.getOrNull() ?: break
         }
         return out.values.toList()
     }
+
+    private suspend fun songsPaged(browseId: String): List<Song> =
+        fetchSongsPaged(browseId) { it.videoId }
 
     /**
      * Every saved library card behind a feed browse id, following continuations.
@@ -961,20 +975,10 @@ object YtMusicRepository {
      * sent as moves relative to neighbours (see [playlistMoves]) and a list
      * that stops short of the end — the open page while it is still filling
      * in — would send the last row it has "to the end" past rows it never saw.
-     * Fails when an entry comes back without the set-video-id a move has to
-     * name, rather than offering to reorder something it can't.
      */
     suspend fun playlistEntries(browseId: String): Result<List<Song>> = call("entries:$browseId") {
-        Log.d(TAG, "PlaylistReorder: starting playlistEntries for $browseId")
-        // Reuse the exact same pagination loop as songsPaged so continuation
-        // pages are parsed with the same fallback (collectSongsDeep) and the
-        // same token extraction logic.  We deduplicate by videoId first, then
-        // keep only rows that carry a setVideoId (the ones that belong to the
-        // playlist itself, not suggestions).
-        val all = songsPaged(browseId)
-        val withSetId = all.filter { it.setVideoId != null }
-        Log.d(TAG, "PlaylistReorder: pageOf returned ${all.size} total, ${withSetId.size} with setVideoId")
-        withSetId.toList()
+        fetchSongsPaged(browseId) { it.setVideoId }
+            .filterNot { it.setVideoId == null }
     }
 
     /**
