@@ -965,26 +965,16 @@ object YtMusicRepository {
      * name, rather than offering to reorder something it can't.
      */
     suspend fun playlistEntries(browseId: String): Result<List<Song>> = call("entries:$browseId") {
-        val out = LinkedHashMap<String, Song>()
         Log.d(TAG, "PlaylistReorder: starting playlistEntries for $browseId")
-        var response = Innertube.browse(browseId)
-        var page = 1
-        while (true) {
-            val shelf = InnertubeParser.parsePlaylistShelf(response) ?: break
-            Log.d(TAG, "PlaylistReorder: page=$page shelf.songs.size=${shelf.songs.size} shelf.continuation=${shelf.continuation != null} continuationToken=${InnertubeParser.continuationToken(response) != null}")
-            shelf.songs.forEach { song ->
-                val setVideoId = song.setVideoId ?: error("playlist entry without an id")
-                out.putIfAbsent(setVideoId, song)
-            }
-            val token = shelf.continuation ?: InnertubeParser.continuationToken(response)
-            if (token == null || page++ >= MAX_PAGES) break
-            // Same cap as [songsPaged] — a playlist past it can't be listed
-            // whole, and a partial list can't be reordered safely.
-            response = runCatching { Innertube.browseContinuation(token) }.getOrNull() ?: break
-        }
-        val result = out.values.toList()
-        Log.d(TAG, "PlaylistReorder: finished with ${result.size} tracks")
-        result
+        // Reuse the exact same pagination loop as songsPaged so continuation
+        // pages are parsed with the same fallback (collectSongsDeep) and the
+        // same token extraction logic.  We deduplicate by videoId first, then
+        // keep only rows that carry a setVideoId (the ones that belong to the
+        // playlist itself, not suggestions).
+        val all = songsPaged(browseId)
+        val withSetId = all.filter { it.setVideoId != null }
+        Log.d(TAG, "PlaylistReorder: pageOf returned ${all.size} total, ${withSetId.size} with setVideoId")
+        withSetId.toList()
     }
 
     /**
