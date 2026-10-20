@@ -286,11 +286,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     )
 
     private data class SearchSession(
-        val key: String,
-        val requestId: Long,
-        val filter: SearchFilter,
-        val continuation: String?,
-    )
+            val key: String,
+            val requestId: Long,
+            val filter: SearchFilter,
+            val continuation: String?,
+            val anonymous: Boolean = true,
+        )
 
     private val searchCache = LruCache<String, SearchCacheEntry>(SEARCH_CACHE_ENTRIES)
     private var searchSession: SearchSession? = null
@@ -2140,7 +2141,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 // records it in the account's history — but now all searches use
                 // the anonymous path, so no search ever pollutes the account.
                 if (exact != null && request.anonymous) {
-                    searchSession = SearchSession(key, request.requestId, request.filter, exact.continuation)
+                    searchSession = SearchSession(key, request.requestId, request.filter, exact.continuation, request.anonymous)
                     return@collectLatest
                 }
 
@@ -2158,7 +2159,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 // whether it succeeded or failed.
                 if (request.requestId != newestRequestId.get()) return@collectLatest
                 _results.value = result.fold(
-                    onSuccess = { page -> published(page, key, request.requestId) },
+                    onSuccess = { page -> published(page, key, request.requestId, request.anonymous) },
                     onFailure = { failure -> UiState.Error(failure.friendly()) },
                 )
             }
@@ -2175,7 +2176,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (_searchLoadingMore.value) return
         _searchLoadingMore.value = true
         viewModelScope.launch {
-            val next = YtMusicRepository.searchContinuation(token, session.filter)
+            val next = YtMusicRepository.searchContinuation(token, session.filter, session.anonymous)
             val stillCurrent = searchSession == session && session.requestId == newestRequestId.get()
             if (stillCurrent) {
                 next.onSuccess { page ->
@@ -2268,11 +2269,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         page: YtMusicRepository.SearchPage,
         key: String,
         requestId: Long,
+        anonymous: Boolean = true,
     ): UiState<List<SearchResult>> {
         val rows = page.rows
         if (rows.isEmpty()) return UiState.Error(text(R.string.no_results))
         searchCache.put(key, SearchCacheEntry(rows, page.continuation))
-        searchSession = SearchSession(key, requestId, _filter.value, page.continuation)
+        searchSession = SearchSession(key, requestId, _filter.value, page.continuation, anonymous)
         prefetchTopResult(rows)
         return UiState.Success(rows)
     }
