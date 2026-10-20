@@ -1158,12 +1158,18 @@ fun SettingsScreen(
             }
         }
 
-        val cacheUnlimited = cacheLimitBytes == AppSettings.UNLIMITED_CACHE_LIMIT_BYTES
+        val cacheDisabled = cacheLimitBytes == AppSettings.DISABLED_CACHE_LIMIT_BYTES
+        val cacheUnlimited = !cacheDisabled && cacheLimitBytes == AppSettings.UNLIMITED_CACHE_LIMIT_BYTES
         // The slider's last stop, one step past the largest fixed size, is
         // "Unlimited" — see [AppSettings.setAudioCacheLimitBytes].
-        val cacheLimitMb = if (cacheUnlimited) CACHE_UNLIMITED_STOP_MB else (cacheLimitBytes / (1024 * 1024)).toInt()
+        val cacheLimitMb = if (cacheDisabled) 0 else if (cacheUnlimited) CACHE_UNLIMITED_STOP_MB else (cacheLimitBytes / (1024 * 1024)).toInt()
         val unlimitedLabel = stringResource(R.string.song_cache_unlimited)
-        val cacheLimitLabel = if (cacheUnlimited) unlimitedLabel else formatCacheSize(cacheLimitMb)
+        val disabledLabel = stringResource(R.string.song_cache_disabled)
+        val cacheLimitLabel = when {
+            cacheDisabled -> disabledLabel
+            cacheUnlimited -> unlimitedLabel
+            else -> formatCacheSize(cacheLimitMb)
+        }
         SearchableSettingsGroup(search, header = stringResource(R.string.storage)) {
             val showCacheFolderTitle = stringResource(R.string.show_cache_folder)
             row(showCacheFolderTitle, "cache", "cached songs", "library", "folder") {
@@ -1190,6 +1196,7 @@ fun SettingsScreen(
                     icon = Icons.Rounded.Storage,
                     title = songCacheLimitTitle,
                     subtitle = when {
+                        cacheDisabled -> stringResource(R.string.song_cache_disabled_subtitle)
                         cacheUnlimited -> stringResource(R.string.song_cache_unlimited_subtitle)
                         cacheLimitMb > CACHE_WARNING_MB ->
                             stringResource(R.string.song_cache_large_subtitle, cacheLimitLabel)
@@ -1200,8 +1207,7 @@ fun SettingsScreen(
                     onSliderValue = {
                         AppSettings.setAudioCacheLimitBytes(it.roundToInt().toLong() * 1024 * 1024)
                     },
-                    valueRange = (AppSettings.DEFAULT_CACHE_LIMIT_BYTES / (1024 * 1024)).toFloat()..
-                        CACHE_UNLIMITED_STOP_MB.toFloat(),
+                    valueRange = 0f..CACHE_UNLIMITED_STOP_MB.toFloat(),
                     steps = 19,
                 )
             }
