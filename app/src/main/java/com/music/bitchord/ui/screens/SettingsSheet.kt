@@ -1203,12 +1203,14 @@ fun SettingsScreen(
                         else -> stringResource(R.string.song_cache_limit_subtitle)
                     },
                     value = cacheLimitLabel,
-                    sliderValue = cacheLimitMb.toFloat(),
+                    // Render with a tiny epsilon so the active track draws even at Disabled (step 0).
+                    sliderValue = cacheLimitMb.toFloat() + 0.001f,
                     onSliderValue = {
                         AppSettings.setAudioCacheLimitBytes(it.roundToInt().toLong() * 1024 * 1024)
                     },
                     valueRange = 0f..CACHE_UNLIMITED_STOP_MB.toFloat(),
-                    steps = 19,
+                    // 10752 / 21 = exactly 512 MB per step → Disabled, 512MB, 1GB, …, 10GB, Unlimited.
+                    steps = 21,
                 )
             }
             val clearSongCacheTitle = stringResource(R.string.clear_song_cache)
