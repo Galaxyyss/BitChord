@@ -1205,7 +1205,13 @@ fun SettingsScreen(
                     value = cacheLimitLabel,
                     // Snap every slider position to an exact 512 MB step so the label and track always align.
                     // At Disabled (step 0) Compose draws a zero-width active track; nudge it by 1/10th of a step.
-                    sliderValue = if (cacheLimitMb == 0) CACHE_STEP_MB * 0.1f else cacheLimitMb.toFloat(),
+                    // At 512 MB (step 1) the fraction is ~4.8 % which rounds to zero pixel width on some screens;
+                    // apply the same nudge so a clean white line always renders from start to thumb.
+                    sliderValue = when (cacheLimitMb) {
+                        0 -> CACHE_STEP_MB * 0.1f
+                        CACHE_STEP_MB -> CACHE_STEP_MB.toFloat() + CACHE_STEP_MB * 0.1f
+                        else -> cacheLimitMb.toFloat()
+                    },
                     onSliderValue = { raw ->
                         val snapped = (raw / CACHE_STEP_MB + 0.5f).toInt() * CACHE_STEP_MB
                         AppSettings.setAudioCacheLimitBytes(snapped.toLong() * 1024 * 1024)
