@@ -109,10 +109,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -2669,30 +2666,20 @@ internal fun SliderRow(
             valueRange = valueRange,
             steps = steps,
             colors = colors,
-            // Custom track: draw inactive + active segments ourselves so the active
-            // segment always has a visible minimum width at low values (Material3's
-            // default Track skips drawing when the computed width is too small).
+            // Use SliderDefaults.Track so the look is identical by construction (16 dp track,
+            // 8 dp corner radius). The default thumbTrackGapSize (6 dp) + half-thumb-width
+            // creates an endGap of 8 dp; at 512 MB the raw active segment (~14 dp) minus this
+            // gap is ~6 dp which is below the 8 dp corner-radius threshold, so M3 skips drawing.
+            // We reduce thumbTrackGapSize to 0 dp so the gap is only half-thumb-width (2 dp),
+            // making the 512 MB segment ~12 dp > 8 dp and visible. The look at 1 GB+ is
+            // virtually unchanged (gap shrinks from 6→0 dp, a barely perceptible difference).
             track = { state ->
-                val fraction = (state.value - state.valueRange.start) /
-                    (state.valueRange.endInclusive - state.valueRange.start)
-                val minActivePx = 12f  // ~12 px minimum active segment on screen
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(4.dp)
-                        .background(colors.inactiveTrackColor, RoundedCornerShape(2.dp))
-                        .drawWithContent {
-                            drawContent() // thumb
-                            if (fraction > 0f) {
-                                val activeWidth = (size.width * fraction).coerceAtLeast(minActivePx)
-                                drawRoundRect(
-                                    color = colors.activeTrackColor,
-                                    size = Size(activeWidth, size.height),
-                                    cornerRadius = CornerRadius(size.height / 2f),
-                                )
-                            }
-                        },
+                SliderDefaults.Track(
+                    sliderState = state,
+                    colors = colors,
+                    drawStopIndicator = null,
+                    drawTick = { _, _ -> },
+                    thumbTrackGapSize = 0.dp,
                 )
             },
             modifier = Modifier.padding(start = ICON_SIZE + ICON_GAP),
