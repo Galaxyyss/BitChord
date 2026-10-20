@@ -109,7 +109,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -1204,14 +1207,7 @@ fun SettingsScreen(
                     },
                     value = cacheLimitLabel,
                     // Snap every slider position to an exact 512 MB step so the label and track always align.
-                    // At Disabled (step 0) Compose draws a zero-width active track; nudge it by 1/10th of a step.
-                    // At 512 MB (step 1) the fraction is ~4.8 % which rounds to zero pixel width on some screens;
-                    // apply the same nudge so a clean white line always renders from start to thumb.
-                    sliderValue = when (cacheLimitMb) {
-                        0 -> CACHE_STEP_MB * 0.1f
-                        CACHE_STEP_MB -> CACHE_STEP_MB.toFloat() + CACHE_STEP_MB * 0.1f
-                        else -> cacheLimitMb.toFloat()
-                    },
+                    sliderValue = if (cacheLimitMb == 0) CACHE_STEP_MB * 0.1f else cacheLimitMb.toFloat(),
                     onSliderValue = { raw ->
                         val snapped = (raw / CACHE_STEP_MB + 0.5f).toInt() * CACHE_STEP_MB
                         AppSettings.setAudioCacheLimitBytes(snapped.toLong() * 1024 * 1024)
@@ -2673,14 +2669,29 @@ internal fun SliderRow(
             valueRange = valueRange,
             steps = steps,
             colors = colors,
-            // Bare track: the step ticks and the end-stop dot are noise when the
-            // value is already spelled out on the line above.
+            // Custom track: draw inactive + active segments ourselves so the active
+            // segment always has a visible minimum width at low values (Material3's
+            // default Track skips drawing when the computed width is too small).
             track = { state ->
-                SliderDefaults.Track(
-                    sliderState = state,
-                    colors = colors,
-                    drawStopIndicator = null,
-                    drawTick = { _, _ -> },
+                val fraction = state.coercedValueAsFraction
+                val minActivePx = 12f  // ~12 px minimum active segment on screen
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .background(colors.inactiveTrackColor, RoundedCornerShape(2.dp))
+                        .drawWithContent {
+                            drawContent() // thumb
+                            if (fraction > 0f) {
+                                val activeWidth = (size.width * fraction).coerceAtLeast(minActivePx)
+                                drawRoundRect(
+                                    color = colors.activeTrackColor,
+                                    size = Size(activeWidth, size.height),
+                                    cornerRadius = CornerRadius(size.height / 2f),
+                                )
+                            }
+                        },
                 )
             },
             modifier = Modifier.padding(start = ICON_SIZE + ICON_GAP),
