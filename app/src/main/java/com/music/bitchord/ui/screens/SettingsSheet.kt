@@ -1203,13 +1203,15 @@ fun SettingsScreen(
                         else -> stringResource(R.string.song_cache_limit_subtitle)
                     },
                     value = cacheLimitLabel,
-                    // Render with a tiny epsilon so the active track draws even at Disabled (step 0).
-                    sliderValue = cacheLimitMb.toFloat() + 0.001f,
-                    onSliderValue = {
-                        AppSettings.setAudioCacheLimitBytes(it.roundToInt().toLong() * 1024 * 1024)
+                    // Snap every slider position to an exact 512 MB step so the label and track always align.
+                    // At Disabled (step 0) Compose draws a zero-width active track; nudge it by 1/10th of a step.
+                    sliderValue = if (cacheLimitMb == 0) CACHE_STEP_MB * 0.1f else cacheLimitMb.toFloat(),
+                    onSliderValue = { raw ->
+                        val snapped = (raw / CACHE_STEP_MB + 0.5f).toInt() * CACHE_STEP_MB
+                        AppSettings.setAudioCacheLimitBytes(snapped.toLong() * 1024 * 1024)
                     },
                     valueRange = 0f..CACHE_UNLIMITED_STOP_MB.toFloat(),
-                    // 10752 / 21 = exactly 512 MB per step → Disabled, 512MB, 1GB, …, 10GB, Unlimited.
+                    // Number of interior tick marks (21 steps → 22 positions: Disabled … Unlimited).
                     steps = 21,
                 )
             }
@@ -1948,6 +1950,9 @@ internal fun openEqualizer(context: Context, sessionId: Int) {
 
 /** Above this, the cache limit slider's subtitle warns rather than reassures. */
 private const val CACHE_WARNING_MB = 2048
+
+/** Each discrete step on the cache-limit slider: exactly 512 MB. */
+private const val CACHE_STEP_MB = 512
 
 /**
  * Where the cache limit slider's "Unlimited" stop sits: one 512MB step past
