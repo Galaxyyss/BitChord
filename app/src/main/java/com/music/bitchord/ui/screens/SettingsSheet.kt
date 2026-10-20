@@ -2673,7 +2673,8 @@ internal fun SliderRow(
             // segment always has a visible minimum width at low values (Material3's
             // default Track skips drawing when the computed width is too small).
             track = { state ->
-                val fraction = state.coercedValueAsFraction
+                val fraction = (state.value - state.valueRange.start) /
+                    (state.valueRange.endInclusive - state.valueRange.start)
                 val minActivePx = 12f  // ~12 px minimum active segment on screen
 
                 Box(
