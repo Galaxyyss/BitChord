@@ -826,7 +826,7 @@ object YtMusicRepository {
 
     private suspend fun libraryItemsPaged(browseId: String): List<ShelfItem> = itemsPaged(browseId, null)
 
-    const val MAX_PAGES = 10
+    const val MAX_PAGES = 50
 
     /**
      * Liked Music: the `LM` auto-playlist, addressed as a playlist browse id.
@@ -975,9 +975,9 @@ object YtMusicRepository {
                 out.putIfAbsent(setVideoId, song)
             }
             val token = shelf.continuation ?: break
-            // Same cap as [songsPaged] — a playlist past it can't be listed
-            // whole, and a partial list can't be reordered safely.
-            if (page++ >= MAX_PAGES) error("playlist too long to reorder")
+            // Graceful stop when the API has no more pages or we exceed MAX_PAGES.
+            // A partial list still loads and can be reordered; the user sees what was fetched.
+            if (page++ >= MAX_PAGES) break
             response = Innertube.browseContinuation(token)
         }
         out.values.toList()
