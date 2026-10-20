@@ -966,10 +966,12 @@ object YtMusicRepository {
      */
     suspend fun playlistEntries(browseId: String): Result<List<Song>> = call("entries:$browseId") {
         val out = LinkedHashMap<String, Song>()
+        Log.d(TAG, "PlaylistReorder: starting playlistEntries for $browseId")
         var response = Innertube.browse(browseId)
         var page = 1
         while (true) {
             val shelf = InnertubeParser.parsePlaylistShelf(response) ?: break
+            Log.d(TAG, "PlaylistReorder: page=$page shelf.songs.size=${shelf.songs.size} shelf.continuation=${shelf.continuation != null} continuationToken=${InnertubeParser.continuationToken(response) != null}")
             shelf.songs.forEach { song ->
                 val setVideoId = song.setVideoId ?: error("playlist entry without an id")
                 out.putIfAbsent(setVideoId, song)
@@ -980,7 +982,9 @@ object YtMusicRepository {
             // whole, and a partial list can't be reordered safely.
             response = runCatching { Innertube.browseContinuation(token) }.getOrNull() ?: break
         }
-        out.values.toList()
+        val result = out.values.toList()
+        Log.d(TAG, "PlaylistReorder: finished with ${result.size} tracks")
+        result
     }
 
     /**
