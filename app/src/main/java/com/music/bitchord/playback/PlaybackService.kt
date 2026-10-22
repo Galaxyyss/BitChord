@@ -142,6 +142,7 @@ import com.music.bitchord.playback.smart.AutomixAnalysisSource
 import com.music.bitchord.playback.smart.VersionAudioAligner
 import com.music.bitchord.widget.MediaWidget
 import com.music.bitchord.widget.MediaWidgetSnapshot
+import com.music.bitchord.widget.WiredHeadsetMediaButtonReceiver
 import com.music.bitchord.wear.WearBridge
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -1775,6 +1776,24 @@ class PlaybackService : MediaLibraryService() {
             .setSessionActivity(sessionActivity())
             .build()
         refreshCustomLayouts()
+
+        // Register the wired-headset multi-click receiver.  It broadcasts a
+        // com.music.bitchord.WIRED_HEADSET_CLICK intent once the detection
+        // window has resolved, and we map 1→play/pause, 2→next, 3→previous.
+        registerReceiver(
+            object : BroadcastReceiver() {
+                override fun onReceive(ctx: Context, intent: Intent) {
+                    val clicks = intent.getIntExtra("click_count", 0)
+                    if (clicks <= 0 || player == null) return
+                    when (clicks) {
+                        1 -> player!!.playWhenReady = !player!!.playWhenReady
+                        2 -> player!!.seekToNextMediaItem()
+                        3 -> player!!.seekToPreviousMediaItem()
+                    }
+                }
+            },
+            IntentFilter("com.music.bitchord.WIRED_HEADSET_CLICK"),
+        )
 
         // Last, so a receiver that outlived the app is adopted by a service
         // whose queue is already restored.

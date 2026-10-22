@@ -461,8 +461,13 @@
             </intent-filter>
         </service>
 
+        <!--
+          Custom wired-headset media button receiver with an 800 ms multi-click
+          detection window so triple-click gestures are recognised reliably.
+          Replaces Media3's built-in receiver which has a too-short debounce.
+        -->
         <receiver
-            android:name="androidx.media3.session.MediaButtonReceiver"
+            android:name=".widget.WiredHeadsetMediaButtonReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MEDIA_BUTTON" />
