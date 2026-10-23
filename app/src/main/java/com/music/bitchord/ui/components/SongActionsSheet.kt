@@ -219,7 +219,8 @@ fun SongActionsSheet(
     // local files have a localUri but their videoId is a content URI, not a
     // YouTube id, so they never appear here.  This lets us distinguish type B
     // (BitChord download) from type C (external local file).
-    val isBitChordDownload = song.videoId in Downloads.saved.value.keys
+    val savedByVideoId by Downloads.saved.collectAsStateWithLifecycle()
+    val isBitChordDownload = song.videoId in savedByVideoId.keys
 
     val rows: @Composable ColumnScope.() -> Unit = {
         // Leads the list whenever it's available: which recording is playing

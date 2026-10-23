@@ -161,7 +161,6 @@ import com.music.bitchord.data.model.LikeStatus
 import com.music.bitchord.data.model.PlaybackSourceType
 import com.music.bitchord.data.model.PLAYER_ART_PX
 import com.music.bitchord.data.model.Song
-import com.music.bitchord.download.Downloads
 import com.music.bitchord.playback.BACK_RESTARTS_AFTER_MS
 import dev.chrisbanes.haze.HazeInputScale
 import dev.chrisbanes.haze.HazeState
@@ -667,6 +666,8 @@ fun NowPlayingScreen(
     shuffleEnabled: Boolean,
     autoplayEnabled: Boolean,
     signedIn: Boolean,
+    /** True when this is a BitChord-downloaded track (videoId in the saved map). */
+    isBitChordDownload: Boolean,
     accountName: String?,
     likeStatus: LikeStatus,
     onToggleLike: () -> Unit,
@@ -1884,6 +1885,7 @@ fun NowPlayingScreen(
                                 LandscapeCredits(
                                     song = song,
                                     signedIn = signedIn,
+                                    isBitChordDownload = isBitChordDownload,
                                     likeStatus = likeStatus,
                                     showRevertCue = showRevertCue,
                                     onToggleLike = onToggleLike,
@@ -3269,7 +3271,7 @@ fun NowPlayingScreen(
                             // like state is still tracked locally via LikeState.
                             // External local files (type C) are excluded: only streamed
                             // songs (A) and BitChord-downloaded songs (B) get this button.
-                            if (signedIn && (song.localUri == null || song.videoId in Downloads.saved.value.keys)) {
+                            if (signedIn && (song.localUri == null || isBitChordDownload)) {
                                 val liked = likeStatus == LikeStatus.LIKE
                                 CircleGlyph(
                                     icon = if (liked) BitChordIcons.HeartFilled else BitChordIcons.Heart,

@@ -65,7 +65,6 @@ import com.music.bitchord.ui.icons.BitChordIcons
 import com.music.bitchord.data.canvas.CanvasArtwork
 import com.music.bitchord.data.model.LikeStatus
 import com.music.bitchord.data.model.Song
-import com.music.bitchord.download.Downloads
 
 /**
  * The widest the two columns are allowed to get between them, centred in
@@ -411,6 +410,8 @@ internal fun LandscapeCredits(
     song: Song,
     signedIn: Boolean,
     likeStatus: LikeStatus,
+    /** True when this is a BitChord-downloaded track (videoId in the saved map). */
+    isBitChordDownload: Boolean,
     /** The menu glyph is briefly the undo arrow after a quality upgrade. */
     showRevertCue: Boolean,
     onToggleLike: () -> Unit,
@@ -462,7 +463,7 @@ internal fun LandscapeCredits(
         // rate on the server, but the like state is still tracked locally via
         // LikeState. External local files (type C) are excluded: only streamed
         // songs (A) and BitChord-downloaded songs (B) get this button.
-        if (signedIn && (song.localUri == null || song.videoId in Downloads.saved.value.keys)) {
+        if (signedIn && (song.localUri == null || isBitChordDownload)) {
             val liked = likeStatus == LikeStatus.LIKE
             CircleGlyph(
                 icon = if (liked) BitChordIcons.HeartFilled else BitChordIcons.Heart,
