@@ -248,6 +248,7 @@ fun SettingsScreen(
     val dontRepeatSuggestions by AppSettings.dontRepeatSuggestions.collectAsStateWithLifecycle()
     val smartVersionAlignment by AppSettings.smartVersionAlignment.collectAsStateWithLifecycle()
     val filterNonMusicAudio by AppSettings.filterNonMusicAudio.collectAsStateWithLifecycle()
+    val musicOnlySearch by AppSettings.musicOnlySearch.collectAsStateWithLifecycle()
     val localMusicFolderUri by AppSettings.localMusicFolderUri.collectAsStateWithLifecycle()
     val highPerformanceMode by AppSettings.highPerformanceMode.collectAsStateWithLifecycle()
     val performanceRefreshRate by AppSettings.performanceRefreshRate.collectAsStateWithLifecycle()
@@ -1104,6 +1105,28 @@ fun SettingsScreen(
                         ),
                     )
                 }
+            }
+        }
+
+        SearchableSettingsGroup(search, header = stringResource(R.string.search)) {
+            val musicOnlySearchTitle = stringResource(R.string.music_only_search)
+            row(musicOnlySearchTitle, "music", "youtube music", "official") {
+                SettingsRow(
+                    icon = Icons.Rounded.MusicNote,
+                    title = musicOnlySearchTitle,
+                    subtitle = stringResource(R.string.music_only_search_subtitle),
+                    trailing = {
+                        Switch(
+                            checked = musicOnlySearch,
+                            onCheckedChange = AppSettings::setMusicOnlySearch,
+                            colors = SwitchDefaults.colors(
+                                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                                checkedBorderColor = MaterialTheme.colorScheme.primary,
+                            ),
+                        )
+                    },
+                    onClick = { AppSettings.setMusicOnlySearch(!musicOnlySearch) },
+                )
             }
         }
 

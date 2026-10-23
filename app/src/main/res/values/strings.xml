@@ -379,6 +379,8 @@
     <string name="download_quality_subtitle">%1$s per track, whatever the connection</string>
     <string name="filter_non_music_audio">Filter non-music audio</string>
     <string name="filter_non_music_audio_subtitle">Hides clips under 30 seconds, WAV files, voice notes, recordings and system sounds</string>
+    <string name="music_only_search">Music-only search</string>
+    <string name="music_only_search_subtitle">Hide user uploads, clips and live recordings from search results and live suggestions</string>
     <string name="performance">Performance</string>
     <string name="high_performance_mode">High performance mode</string>
     <string name="high_performance_subtitle">Uses full animations and blur, and requests a higher display refresh rate</string>

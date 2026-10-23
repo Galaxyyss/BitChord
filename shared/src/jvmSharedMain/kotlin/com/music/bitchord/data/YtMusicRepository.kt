@@ -309,21 +309,23 @@ object YtMusicRepository {
      * search responsive; the UI asks [searchContinuation] for later pages as
      * the listener reaches the end of the list.
      */
-    suspend fun searchPage(query: String, filter: SearchFilter, anonymous: Boolean = true): Result<SearchPage> =
+    suspend fun searchPage(query: String, filter: SearchFilter, anonymous: Boolean = true, musicOnly: Boolean = false): Result<SearchPage> =
         call("search:${filter.name}") {
             InnertubeParser.parseSearchPage(
                 Innertube.search(query, filter.params, anonymous),
                 includeVideos = filter == SearchFilter.VIDEOS,
+                musicOnly = musicOnly,
             ).let { page ->
                 SearchPage(page.rows.distinctBy { it.identityKey() }, page.continuation)
             }
         }
 
     /** Fetches the next page of a search only when the result list needs it. */
-    suspend fun searchContinuation(token: String, filter: SearchFilter): Result<SearchPage> = call("search:continuation") {
+    suspend fun searchContinuation(token: String, filter: SearchFilter, musicOnly: Boolean = false): Result<SearchPage> = call("search:continuation") {
         InnertubeParser.parseSearchPage(
             Innertube.searchContinuation(token),
             includeVideos = filter == SearchFilter.VIDEOS,
+            musicOnly = musicOnly,
         ).let { page ->
             SearchPage(page.rows.distinctBy { it.identityKey() }, page.continuation)
         }
@@ -333,8 +335,8 @@ object YtMusicRepository {
      * Compatibility helper for callers that need candidates but not a scrolling
      * result screen. Those callers need the first, most relevant page only.
      */
-    suspend fun search(query: String, filter: SearchFilter): Result<List<SearchResult>> =
-        searchPage(query, filter).map { it.rows }
+    suspend fun search(query: String, filter: SearchFilter, musicOnly: Boolean = false): Result<List<SearchResult>> =
+        searchPage(query, filter, musicOnly = musicOnly).map { it.rows }
 
     private fun SearchResult.identityKey(): String = when (this) {
         is SearchResult.TopTrack -> "v:${song.videoId}"
@@ -364,11 +366,12 @@ object YtMusicRepository {
      * IME Search / tapping a suggestion) still use the normal authenticated
      * [searchPage] path and are recorded properly.
      */
-    suspend fun searchTypeahead(input: String): Result<SearchPage> =
+    suspend fun searchTypeahead(input: String, musicOnly: Boolean = false): Result<SearchPage> =
         call("typeahead:$input") {
             InnertubeParser.parseSearchPage(
                 Innertube.searchTypeahead(input),
                 includeVideos = false,
+                musicOnly = musicOnly,
             ).let { page ->
                 SearchPage(page.rows.distinctBy { it.identityKey() }, page.continuation)
             }

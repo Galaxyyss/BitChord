@@ -562,6 +562,11 @@ object AppSettings {
      */
     val replayGenres = MutableStateFlow(true)
 
+    // ── Search ────────────────────────────────────────────────────────────────
+
+    /** When ON, search results and live suggestions show only official catalogue tracks (ATV). */
+    val musicOnlySearch = MutableStateFlow(false)
+
     // ── Library ─────────────────────────────────────────────────────────────
 
     /** Hides short clips, recorder output and non-music formats from Local Music. */
@@ -919,6 +924,7 @@ object AppSettings {
         listenBrainzPrimaryArtistOnly.value = prefs.getBoolean(KEY_LISTENBRAINZ_PRIMARY_ARTIST_ONLY, false)
         spotifySpdcToken.value = prefs.getString(KEY_SPOTIFY_SPDC_TOKEN, "").orEmpty()
         replayGenres.value = prefs.getBoolean(KEY_REPLAY_GENRES, true)
+        musicOnlySearch.value = prefs.getBoolean(KEY_MUSIC_ONLY_SEARCH, false)
         filterNonMusicAudio.value = prefs.getBoolean(KEY_FILTER_NON_MUSIC_AUDIO, true)
         localMusicSort.value = readLocalMusicSort(KEY_LOCAL_MUSIC_SORT)
         downloadedMusicSort.value = readLocalMusicSort(KEY_DOWNLOADED_MUSIC_SORT)
@@ -1689,6 +1695,11 @@ object AppSettings {
         prefs.edit().putBoolean(KEY_REPLAY_GENRES, value).apply()
     }
 
+    fun setMusicOnlySearch(value: Boolean) {
+        musicOnlySearch.value = value
+        prefs.edit().putBoolean(KEY_MUSIC_ONLY_SEARCH, value).apply()
+    }
+
     fun setFilterNonMusicAudio(value: Boolean) {
         filterNonMusicAudio.value = value
         prefs.edit().putBoolean(KEY_FILTER_NON_MUSIC_AUDIO, value).apply()
@@ -2048,6 +2059,7 @@ object AppSettings {
     private const val KEY_PRIORITIZE_SYLLABLE_SYNC = "prioritize_syllable_sync"
     private const val KEY_PAXSENIX_API_KEY = "paxsenix_api_key"
     private const val KEY_REPLAY_GENRES = "replay_genres"
+    private const val KEY_MUSIC_ONLY_SEARCH = "music_only_search"
     private const val KEY_FILTER_NON_MUSIC_AUDIO = "filter_non_music_audio"
     private const val KEY_SHOW_CACHE_FOLDER = "show_cache_folder"
     private const val KEY_LOCAL_MUSIC_SORT = "local_music_sort"

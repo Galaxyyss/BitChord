@@ -54,7 +54,7 @@ object InnertubeParser {
      */
     fun parseSearch(response: JsonObject): List<SearchResult> = parseSearchPage(response).rows
 
-    fun parseSearchPage(response: JsonObject, includeVideos: Boolean = false): SearchPage {
+    fun parseSearchPage(response: JsonObject, includeVideos: Boolean = false, musicOnly: Boolean = false): SearchPage {
         // The "All" tab spreads results across several shelf types (card shelf
         // for the top result, then one shelf per category). Its promoted top
         // result lives on the card itself, not in a responsive row, so read it
@@ -62,7 +62,7 @@ object InnertubeParser {
         val topResults: List<SearchResult> = if (includeVideos) emptyList() else {
             collectRenderers(response, "musicCardShelfRenderer")
                 .mapNotNull { card ->
-                    parseCardShelfSong(card)?.let(SearchResult::TopTrack)
+                    parseCardShelfSong(card, musicOnly)?.let(SearchResult::TopTrack)
                         ?: parseCardShelfBrowse(card)?.let(SearchResult::Browse)
                 }
         }
@@ -103,7 +103,7 @@ object InnertubeParser {
                     if (seen.add("b:${browse.browseId}")) add(SearchResult.Browse(browse))
                 } else {
                     val fallback = cardCredits.firstOrNull { it.first === renderer }?.second
-                    parseResponsiveListItem(renderer, fallback ?: Credits())?.let { song ->
+                    parseResponsiveListItem(renderer, fallback ?: Credits(), musicOnly)?.let { song ->
                         // The mixed All page stays music-only; the dedicated Videos
                         // filter is the one place music-video uploads belong.
                         if (song.isVideo == includeVideos && seen.add("v:${song.videoId}")) {
@@ -654,6 +654,7 @@ object InnertubeParser {
     private fun parseResponsiveListItem(
         renderer: JsonObject?,
         fallback: Credits = Credits(),
+        musicOnly: Boolean = false,
     ): Song? {
         if (renderer == null) return null
         val videoId = renderer.o("playlistItemData").s("videoId")
@@ -709,6 +710,22 @@ object InnertubeParser {
         val thumbnails = renderer.o("thumbnail").o("musicThumbnailRenderer")
             .o("thumbnail").a("thumbnails")
 
+        // The row type word is the clean signal when present ("All" tab);
+            // otherwise a music-video upload gives itself away with widescreen
+            // art where a catalogue track has square album cover art.
+            val baseIsVideo = rowType == "video" || thumbnails.isNotSquare()
+            // When musicOnly is ON, keep only official catalogue tracks (ATV).
+            // If the field is missing fall back to the heuristic so we never
+            // drop a track blindly — fail-open.
+            val isVideo = if (!musicOnly) baseIsVideo else {
+                val mvt = renderer.musicVideoType()
+                when {
+                    mvt == null -> baseIsVideo  // no signal, keep existing heuristic
+                    mvt == "MUSIC_VIDEO_TYPE_ATV" -> false  // official catalogue track
+                    else -> true  // UGC, podcast episode, or anything non-ATV
+                }
+            }
+
         return Song(
             videoId = videoId,
             title = title,
@@ -731,10 +748,7 @@ object InnertubeParser {
             // is simply absent, which is what makes "remove from playlist"
             // offer itself exactly where it means something.
             setVideoId = renderer.o("playlistItemData").s("playlistSetVideoId"),
-            // The row type word is the clean signal when present ("All" tab);
-            // otherwise a music-video upload gives itself away with widescreen
-            // art where a catalogue track has square album cover art.
-            isVideo = rowType == "video" || thumbnails.isNotSquare(),
+            isVideo = isVideo,
             isExplicit = renderer.hasExplicitBadge(),
         )
     }
@@ -745,7 +759,7 @@ object InnertubeParser {
      * credits are placed directly on the card, so it would otherwise vanish
      * from the All tab while remaining first in the Songs tab.
      */
-    private fun parseCardShelfSong(renderer: JsonObject): Song? {
+    private fun parseCardShelfSong(renderer: JsonObject, musicOnly: Boolean = false): Song? {
         val videoId = renderer.o("onTap").o("watchEndpoint").s("videoId") ?: return null
         val title = renderer.o("title").runs()
         if (title.isBlank()) return null
@@ -764,6 +778,19 @@ object InnertubeParser {
         val thumbnails = renderer.o("thumbnail").o("musicThumbnailRenderer")
             .o("thumbnail").a("thumbnails")
 
+        // Same musicOnly logic as parseResponsiveListItem — use the card's
+        // onTap watchEndpoint which carries the same nested config.
+        val baseIsVideo = rowType == "video" || thumbnails.isNotSquare()
+        val isVideo = if (!musicOnly) baseIsVideo else {
+            val we = renderer.o("onTap").o("watchEndpoint") ?: JsonObject(emptyMap())
+            val mvt = we.musicVideoTypeFromWatchEndpoint()
+            when {
+                mvt == null -> baseIsVideo  // no signal, keep existing heuristic
+                mvt == "MUSIC_VIDEO_TYPE_ATV" -> false
+                else -> true
+            }
+        }
+
         return Song(
             videoId = videoId,
             title = title,
@@ -777,7 +804,7 @@ object InnertubeParser {
             artists = completeArtistCredits(artist.orEmpty(), credits.artists),
             albumId = credits.albumId,
             albumName = credits.albumName,
-            isVideo = rowType == "video" || thumbnails.isNotSquare(),
+            isVideo = isVideo,
             isExplicit = renderer["subtitleBadges"].hasExplicitBadge(),
         )
     }
@@ -1636,4 +1663,45 @@ private fun JsonArray?.isNotSquare(): Boolean {
     val height = last.s("height")?.toDoubleOrNull() ?: return false
     if (width <= 0 || height <= 0) return false
     return width / height !in 0.85..1.15
+}
+
+/**
+ * Extracts `musicVideoType` from the first watchEndpoint found on a renderer.
+ * Checks the overlay play button path (used for videoId), then falls back to
+ * the flexColumns[0] text run endpoint. Returns null when absent.
+ */
+private fun JsonObject.musicVideoType(): String? {
+    // Path 1: overlay → musicPlayButtonRenderer → playNavigationEndpoint → watchEndpoint
+    val overlay = this.o("overlay")
+        .o("musicItemThumbnailOverlayRenderer").o("content")
+        .o("musicPlayButtonRenderer").o("playNavigationEndpoint")
+        .o("watchEndpoint")
+    if (overlay != null) {
+        overlay.s("musicVideoType")?.let { return it }
+    }
+    // Path 2: flexColumns[0] → text → runs[n] → navigationEndpoint → watchEndpoint
+    val fc0 = this.a("flexColumns").orEmpty().getOrNull(0)
+        ?.o("musicResponsiveListItemFlexColumnRenderer")?.o("text")?.a("runs").orEmpty()
+    for (run in fc0) {
+        val ep = run.o("navigationEndpoint").o("watchEndpoint")
+        if (ep != null) {
+            ep.s("musicVideoType")?.let { return it }
+        }
+    }
+    // Path 3: card shelf onTap → watchEndpoint (for parseCardShelfSong)
+    val onTap = this.o("onTap").o("watchEndpoint")
+    if (onTap != null) {
+        onTap.s("musicVideoType")?.let { return it }
+    }
+    return null
+}
+
+/**
+ * Reads `musicVideoType` from a watchEndpoint's nested config.
+ * Used by parseCardShelfSong where the endpoint is already known to exist.
+ */
+private fun JsonObject.musicVideoTypeFromWatchEndpoint(): String? {
+    val mvc = this.o("watchEndpointMusicSupportedConfigs")
+        .o("watchEndpointMusicConfig")
+    return mvc.s("musicVideoType")
 }

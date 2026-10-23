@@ -316,6 +316,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val requestId: Long,
         val filter: SearchFilter,
         val continuation: String?,
+        val musicOnly: Boolean = false,
     )
 
     private val searchCache = LruCache<String, SearchCacheEntry>(SEARCH_CACHE_ENTRIES)
@@ -2293,7 +2294,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 // see [SourceResolver.substituteForYouTube] — which upgrades
                 // the ones it holds without any of them having to be a
                 // separate row to pick between.
-                val result = YtMusicRepository.searchPage(request.query, request.filter, request.anonymous)
+                val result = YtMusicRepository.searchPage(request.query, request.filter, request.anonymous, musicOnly = AppSettings.musicOnlySearch.value)
                 // A search that has been superseded shouldn't land on screen,
                 // whether it succeeded or failed.
                 if (request.requestId != newestRequestId.get()) return@collectLatest
@@ -2315,7 +2316,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (_searchLoadingMore.value) return
         _searchLoadingMore.value = true
         viewModelScope.launch {
-            val next = YtMusicRepository.searchContinuation(token, session.filter)
+            val next = YtMusicRepository.searchContinuation(token, session.filter, musicOnly = session.musicOnly)
             val stillCurrent = searchSession == session && session.requestId == newestRequestId.get()
             if (stillCurrent) {
                 next.onSuccess { page ->
@@ -2392,7 +2393,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     _typeaheadResults.value = emptyList()
                     return@collectLatest
                 }
-                val result = YtMusicRepository.searchTypeahead(input).getOrNull()
+                val result = YtMusicRepository.searchTypeahead(input, musicOnly = AppSettings.musicOnlySearch.value).getOrNull()
                 // If the field moved on, drop the result silently.
                 if (_query.value != input) {
                     _typeaheadResults.value = emptyList()
@@ -2412,7 +2413,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val rows = page.rows
         if (rows.isEmpty()) return UiState.Error(text(R.string.no_results))
         searchCache.put(key, SearchCacheEntry(rows, page.continuation))
-        searchSession = SearchSession(key, requestId, _filter.value, page.continuation)
+        searchSession = SearchSession(key, requestId, _filter.value, page.continuation, AppSettings.musicOnlySearch.value)
         prefetchTopResult(rows)
         return UiState.Success(rows)
     }
