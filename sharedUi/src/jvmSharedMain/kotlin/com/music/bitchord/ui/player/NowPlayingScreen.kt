@@ -161,6 +161,7 @@ import com.music.bitchord.data.model.LikeStatus
 import com.music.bitchord.data.model.PlaybackSourceType
 import com.music.bitchord.data.model.PLAYER_ART_PX
 import com.music.bitchord.data.model.Song
+import com.music.bitchord.download.Downloads
 import com.music.bitchord.playback.BACK_RESTARTS_AFTER_MS
 import dev.chrisbanes.haze.HazeInputScale
 import dev.chrisbanes.haze.HazeState
@@ -3266,7 +3267,9 @@ fun NowPlayingScreen(
                             // record it against. Local files and finished downloads
                             // have no YouTube identity to rate on the server, but the
                             // like state is still tracked locally via LikeState.
-                            if (signedIn) {
+                            // External local files (type C) are excluded: only streamed
+                            // songs (A) and BitChord-downloaded songs (B) get this button.
+                            if (signedIn && (song.localUri == null || song.videoId in Downloads.saved.value.keys)) {
                                 val liked = likeStatus == LikeStatus.LIKE
                                 CircleGlyph(
                                     icon = if (liked) BitChordIcons.HeartFilled else BitChordIcons.Heart,

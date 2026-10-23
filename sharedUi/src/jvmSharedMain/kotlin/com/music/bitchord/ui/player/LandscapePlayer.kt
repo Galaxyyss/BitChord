@@ -65,6 +65,7 @@ import com.music.bitchord.ui.icons.BitChordIcons
 import com.music.bitchord.data.canvas.CanvasArtwork
 import com.music.bitchord.data.model.LikeStatus
 import com.music.bitchord.data.model.Song
+import com.music.bitchord.download.Downloads
 
 /**
  * The widest the two columns are allowed to get between them, centred in
@@ -459,8 +460,9 @@ internal fun LandscapeCredits(
         // Same gate as the portrait player's: no account to like against for a
         // guest. Local files and finished downloads have no YouTube identity to
         // rate on the server, but the like state is still tracked locally via
-        // LikeState.
-        if (signedIn) {
+        // LikeState. External local files (type C) are excluded: only streamed
+        // songs (A) and BitChord-downloaded songs (B) get this button.
+        if (signedIn && (song.localUri == null || song.videoId in Downloads.saved.value.keys)) {
             val liked = likeStatus == LikeStatus.LIKE
             CircleGlyph(
                 icon = if (liked) BitChordIcons.HeartFilled else BitChordIcons.Heart,
