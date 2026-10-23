@@ -316,6 +316,9 @@ dependencies {
     // ---- Images: Coil 3 + Palette (dominant colors for the mesh gradient) ----
     implementation("io.coil-kt.coil3:coil-compose:3.0.4")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.0.4")
+    // Title logos are PNG, but artist signatures are usually SVG — without
+    // this Coil can't decode them (see ArtistSignatureRepository).
+    implementation("io.coil-kt.coil3:coil-svg:3.0.4")
     implementation("androidx.palette:palette-ktx:1.0.0")
 
     // ---- Frosted glass / progressive blur (Telegram-style bars) ----
@@ -486,15 +489,8 @@ abstract class BundleWearApk : DefaultTask() {
         val out = outputDir.get().asFile.resolve("wear")
         out.deleteRecursively()
         out.mkdirs()
-        val apkFiles = apks.asFileTree.matching { include("*.apk") }.files
-        if (apkFiles.isEmpty()) {
-            logger.warn("No Wear APKs found in ${apks.files}; skipping Wear bundle.")
-            return
-        }
-        if (apkFiles.size > 1) {
-            logger.warn("Multiple Wear APKs found (${apkFiles.size}); selecting the most recent one.")
-        }
-        val apk = apkFiles.maxByOrNull { it.lastModified() }!!
+        val apk = apks.asFileTree.matching { include("*.apk") }.files.singleOrNull()
+            ?: throw GradleException("Expected exactly one watch APK in ${apks.files}")
         val target = out.resolve("BitChordWear.apk")
         apk.copyTo(target, overwrite = true)
         val digest = MessageDigest.getInstance("SHA-256")
