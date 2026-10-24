@@ -1820,14 +1820,16 @@ class PlaybackService : MediaLibraryService() {
             // non-downloaded tracks use, so the receiver gets an HTTP URL it can
             // reach — see #1085. Only try this when the original URI is not
             // already a bitchord:// or source-track URI (those resolve fine).
-            val fallback = uri.toString().takeIf {
-                it.startsWith("content://") || it.startsWith("file://")
-            }?.let { id -> item.mediaId }?.let { videoId ->
+            val fallback = uri.takeIf {
+                it.scheme == "content" || it.scheme == "file"
+            }?.let { item.mediaId.takeIf { id -> id.isNotBlank() } }?.let { videoId ->
                 "bitchord://watch?v=$videoId"
             }
             if (fallback != null) {
-                DirectSourceGate.ungated { resolver.resolveDataSpec(DataSpec(fallback.toUri())) }.uri
-                    .takeIf { it.scheme == "http" || it.scheme == "https" }
+                runCatching {
+                    DirectSourceGate.ungated { resolver.resolveDataSpec(DataSpec(fallback.toUri())) }.uri
+                        .takeIf { it.scheme == "http" || it.scheme == "https" }
+                }.getOrNull()
             } else null
         } else {
             CastStream(resolved.toString(), CastPlayback.mimeTypeOf(resolved))
