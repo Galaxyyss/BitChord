@@ -1822,8 +1822,10 @@ class PlaybackService : MediaLibraryService() {
             // already a bitchord:// or source-track URI (those resolve fine).
             val fallback = uri.takeIf {
                 it.scheme == "content" || it.scheme == "file"
-            }?.let { item.mediaId.takeIf { id -> id.isNotBlank() } }?.let { videoId ->
-                "bitchord://watch?v=$videoId"
+            }?.let {
+                val id = item.mediaId
+                if (id.isBlank()) return@let null
+                "bitchord://watch?v=$id"
             }
             if (fallback != null) {
                 runCatching {
