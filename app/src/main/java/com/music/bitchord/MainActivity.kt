@@ -76,7 +76,6 @@ import androidx.compose.material.icons.rounded.Upgrade
 import com.music.bitchord.data.listentogether.ServerConnectionState
 import com.music.bitchord.ui.haptics.Haptic
 import com.music.bitchord.ui.haptics.rememberHaptics
-import kotlin.math.roundToInt
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -3950,11 +3949,8 @@ private fun BitChordApp(
                 val scope = rememberCoroutineScope()
                 var scrollAnimToken by remember { mutableIntStateOf(0) }
 
-                /** Ease-out cubic — fast start, smooth deceleration to rest. */
-                fun tweenEasing(t: Float): Float {
-                    val s = 1.70158f
-                    return 1f + (t - 1f) * (t - 1f) * ((s + 1f) * (t - 1f) + s)
-                }
+                /** Linear easing — steady speed from the start. */
+                fun linearEasing(t: Float): Float = t
 
                 val onActiveTabTap: () -> Unit = {
                     if (selectedTab != TAB_SEARCH) {
@@ -3966,8 +3962,8 @@ private fun BitChordApp(
                             if (startOffset > 0) {
                                 var t = 0f
                                 while (t < 1f && scrollAnimToken == token) {
-                                    t += 0.03f
-                                    val eased = tweenEasing(t)
+                                    t += 0.025f
+                                    val eased = linearEasing(t)
                                     currentListState.scrollToItem(
                                         currentListState.firstVisibleItemIndex,
                                         (startOffset * (1f - eased)).toInt(),
