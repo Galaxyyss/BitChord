@@ -2825,49 +2825,70 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             // Premium/unavailable albums may be absent from the artist-page
             // carousel; searching by artist name recovers them.
             if (resolved == BrowseType.ARTIST && !name.isNullOrBlank() && sections.isNotEmpty()) {
+                val artistName = name!!
                 viewModelScope.launch {
                     try {
-                        val searchResult = YtMusicRepository.searchPage(name!!, SearchFilter.ALBUMS)
-                        val newAlbums = searchResult.getOrNull()?.rows?.filterIsInstance<SearchResult.Browse>()
-                            ?.filter { it.item.type == BrowseType.ALBUM }
-                            ?.filter { browseItem ->
-                                // Match by artist name in subtitle (case-insensitive, whole word).
-                                // The subtitle format is "Album • ArtistName" or just "ArtistName".
-                                val sub = browseItem.item.subtitle.lowercase()
-                                val artist = name!!.lowercase()
-                                sub.contains(artist)
+                        // Collect album candidates from up to 3 pages (first + 2 continuations).
+                        var allAlbums: List<SearchResult.Browse> = emptyList()
+                        var nextToken: String? = null
+                        repeat(3) { pageIdx ->
+                            val result = if (pageIdx == 0) {
+                                YtMusicRepository.searchPage(artistName, SearchFilter.ALBUMS)
+                            } else {
+                                requireNotNull(nextToken) { "No continuation token on page ${pageIdx + 1}" }
+                                    .let { tok ->
+                                        YtMusicRepository.searchContinuation(tok, SearchFilter.ALBUMS)
+                                    }
                             }
-                            ?: emptyList()
-                        if (newAlbums.isEmpty()) return@launch
-                        // Collect all existing browseIds across every shelf.
-                        val existingIds = sections.flatMapTo(HashSet()) { it.items.mapNotNull { i -> i.browseId } }
-                        val missing = newAlbums.filterNot { it.item.browseId in existingIds }
-                        if (missing.isEmpty()) return@launch
-                        // Find the Albums shelf by title (structural signal: "Albums",
-                        // "Albums & singles", etc. — match prefix case-insensitively).
-                        val albumShelfIdx = sections.indexOfFirst { s ->
-                            s.title.lowercase().startsWith("album")
+                            val page = result.getOrNull() ?: return@launch
+                            nextToken = page.continuation
+                            allAlbums += page.rows.filterIsInstance<SearchResult.Browse>()
+                                .filter { it.item.type == BrowseType.ALBUM }
+                                .filter { albumMatchesArtist(it.item.subtitle, artistName) }
+                            if (nextToken.isNullOrEmpty()) break
                         }
-                        if (albumShelfIdx < 0) return@launch
-                        val updatedShelves = sections.toMutableList()
-                        val existingShelf = updatedShelves[albumShelfIdx]
-                        // Build ShelfItems from BrowseItems.
-                        val newItems = missing.map { b ->
-                            ShelfItem(
-                                title = b.item.title,
-                                subtitle = b.item.subtitle,
-                                thumbnailUrl = b.item.thumbnailUrl,
-                                videoId = null,
-                                browseId = b.item.browseId,
-                                isVideo = false,
-                            )
-                        }
-                        updatedShelves[albumShelfIdx] = existingShelf.copy(
-                            items = existingShelf.items + newItems
-                        )
-                        // Update the detail page in-place.
-                        _detailStack.value = _detailStack.value.map { dp ->
-                            if (dp.browseId == browseId) dp.copy(sections = updatedShelves) else dp
+                        if (allAlbums.isEmpty()) return@launch
+                        // Merge into the CURRENT _detailStack state (race-safe).
+                        _detailStack.update { stack ->
+                            stack.map { dp ->
+                                if (dp.browseId != browseId) return@map dp
+                                // Recompute from current sections so continuation-loaded shelves survive.
+                                val curSections = dp.sections
+                                val existingIds = curSections.flatMapTo(HashSet<String>()) { shelf ->
+                                    shelf.items.mapNotNull { it.browseId }
+                                }
+                                val missing = allAlbums.filterNot { it.item.browseId in existingIds }
+                                if (missing.isEmpty()) return@map dp
+                                // Find the Albums shelf — title prefix first, MPREb_ fallback.
+                                var albumShelfIdx = curSections.indexOfFirst { s ->
+                                    s.title.lowercase().startsWith("album")
+                                }
+                                if (albumShelfIdx < 0) {
+                                    // Locale-independent fallback: first shelf whose ALL items
+                                    // have browseIds starting with "MPREb_" (YouTube album prefix).
+                                    albumShelfIdx = curSections.indexOfFirst { s ->
+                                        s.items.isNotEmpty() &&
+                                            s.items.all { it.browseId != null && it.browseId!!.startsWith("MPREb_") }
+                                    }
+                                }
+                                if (albumShelfIdx < 0) return@map dp
+                                val updatedShelves = curSections.toMutableList()
+                                val existingShelf = updatedShelves[albumShelfIdx]
+                                val newItems = missing.map { b ->
+                                    ShelfItem(
+                                        title = b.item.title,
+                                        subtitle = b.item.subtitle,
+                                        thumbnailUrl = b.item.thumbnailUrl,
+                                        videoId = null,
+                                        browseId = b.item.browseId,
+                                        isVideo = false,
+                                    )
+                                }
+                                updatedShelves[albumShelfIdx] = existingShelf.copy(
+                                    items = existingShelf.items + newItems
+                                )
+                                dp.copy(sections = updatedShelves)
+                            }
                         }
                     } catch (_: CancellationException) {
                         throw
@@ -2887,6 +2908,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * then arrive in order and swap the rows in place, so the page is usable
      * before the last song has been found.
      */
+    /**
+     * Returns true when [subtitle] refers to [artistName] as the primary artist.
+     *
+     * The subtitle format from YouTube is "Album • ArtistName" or just
+     * "ArtistName".  We split on the bullet separator (•) and also on ", " and
+     * " & " so collaboration albums like "Drake & 21 Savage" still match.
+     * A plain substring match ("Drake" matching "Drake Bell") is rejected.
+     */
+    private fun albumMatchesArtist(subtitle: String, artistName: String): Boolean {
+        val target = artistName.lowercase()
+        // Split on common separators used in YouTube subtitles.
+        val segments = subtitle.split(" • ", ", ", " & ").mapNotNull { it.trim().lowercase().takeIf { s -> s.isNotBlank() } }
+        return segments.any { it == target } ||
+            segments.any { part -> part.split(", ", " & ").any { it.trim().lowercase() == target } }
+    }
+
     private fun openSpotifyPage(browseId: String, title: String, subtitle: String, thumbnailUrl: String?) {
         _detailStack.value += DetailPage(
             browseId = browseId,
