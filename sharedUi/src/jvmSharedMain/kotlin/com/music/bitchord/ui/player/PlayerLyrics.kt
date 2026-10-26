@@ -1842,7 +1842,7 @@ internal fun LyricsPanel(
     val lyricsBlur by PlayerSettings.lyricsBlur.collectAsStateWithLifecycle()
     val reduceAnimation by PlayerSettings.reduceAnimation.collectAsStateWithLifecycle()
 
-    val glowing = !reduceAnimation && lyricsBlur &&
+    val glowing = !reduceAnimation &&
         renderEffectBlurSupported
 
     LaunchedEffect(listState) {
