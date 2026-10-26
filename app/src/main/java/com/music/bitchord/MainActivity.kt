@@ -76,6 +76,7 @@ import androidx.compose.material.icons.rounded.Upgrade
 import com.music.bitchord.data.listentogether.ServerConnectionState
 import com.music.bitchord.ui.haptics.Haptic
 import com.music.bitchord.ui.haptics.rememberHaptics
+import kotlin.math.roundToInt
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -3945,11 +3946,40 @@ private fun BitChordApp(
                 }
 
                 val haptics = rememberHaptics()
-                /** Scroll the current tab's list back to top when the active tab is tapped. */
+                /** Scroll the current tab's list back to top when the active tab is tapped (excludes Search). */
                 val scope = rememberCoroutineScope()
+                var scrollAnimToken by remember { mutableIntStateOf(0) }
+
+                /** Ease-out cubic — fast start, smooth deceleration to rest. */
+                fun tweenEasing(t: Float): Float {
+                    val s = 1.70158f
+                    return 1f + (t - 1f) * (t - 1f) * ((s + 1f) * (t - 1f) + s)
+                }
+
                 val onActiveTabTap: () -> Unit = {
-                    scope.launch { currentListState.animateScrollToItem(0) }
-                    haptics.play(Haptic.Select)
+                    if (selectedTab != TAB_SEARCH) {
+                        haptics.play(Haptic.Select)
+                        val token = scrollAnimToken + 1
+                        scrollAnimToken = token
+                        scope.launch {
+                            val startOffset = currentListState.firstVisibleItemScrollOffset
+                            if (startOffset > 0) {
+                                var t = 0f
+                                while (t < 1f && scrollAnimToken == token) {
+                                    t += 0.03f
+                                    val eased = tweenEasing(t)
+                                    currentListState.scrollToItem(
+                                        currentListState.firstVisibleItemIndex,
+                                        (startOffset * (1f - eased)).toInt(),
+                                    )
+                                    delay(16L)
+                                }
+                                if (scrollAnimToken == token) {
+                                    currentListState.scrollToItem(0, 0)
+                                }
+                            }
+                        }
+                    }
                 }
 
                 if (glassActive) Column(
