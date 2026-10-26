@@ -3946,35 +3946,10 @@ private fun BitChordApp(
 
                 val haptics = rememberHaptics()
                 /** Scroll the current tab's list back to top when the active tab is tapped (excludes Search). */
-                val scope = rememberCoroutineScope()
-                var scrollAnimToken by remember { mutableIntStateOf(0) }
-
-                /** Linear easing — steady speed from the start. */
-                fun linearEasing(t: Float): Float = t
-
                 val onActiveTabTap: () -> Unit = {
                     if (selectedTab != TAB_SEARCH) {
                         haptics.play(Haptic.Select)
-                        val token = scrollAnimToken + 1
-                        scrollAnimToken = token
-                        scope.launch {
-                            val startOffset = currentListState.firstVisibleItemScrollOffset
-                            if (startOffset > 0) {
-                                var t = 0f
-                                while (t < 1f && scrollAnimToken == token) {
-                                    t += 0.025f
-                                    val eased = linearEasing(t)
-                                    currentListState.scrollToItem(
-                                        currentListState.firstVisibleItemIndex,
-                                        (startOffset * (1f - eased)).toInt(),
-                                    )
-                                    delay(16L)
-                                }
-                                if (scrollAnimToken == token) {
-                                    currentListState.scrollToItem(0, 0)
-                                }
-                            }
-                        }
+                        currentListState.animateScrollToItem(0)
                     }
                 }
 
