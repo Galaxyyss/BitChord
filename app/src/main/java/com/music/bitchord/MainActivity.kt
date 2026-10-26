@@ -74,6 +74,8 @@ import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Sort
 import androidx.compose.material.icons.rounded.Upgrade
 import com.music.bitchord.data.listentogether.ServerConnectionState
+import com.music.bitchord.ui.haptics.Haptic
+import com.music.bitchord.ui.haptics.rememberHaptics
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -3942,6 +3944,13 @@ private fun BitChordApp(
                     }
                 }
 
+                val haptics = rememberHaptics()
+                /** Scroll the current tab's list back to top when the active tab is tapped. */
+                val onActiveTabTap: () -> Unit = {
+                    currentListState.animateScrollToItem(0)
+                    haptics.play(Haptic.Select)
+                }
+
                 if (glassActive) Column(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
@@ -3977,6 +3986,7 @@ private fun BitChordApp(
                         dock = activeDock,
                         pull = playerSheetMotion.takeIf { !reducePlayerMotion },
                         modifier = Modifier.fillMaxWidth(),
+                        onActiveTabTap = onActiveTabTap,
                     )
                 } else Column(
                     modifier = Modifier
@@ -4022,6 +4032,7 @@ private fun BitChordApp(
                         selectedIndex = selectedTab,
                         hazeState = hazeState,
                         onTabSelected = onTabSelected,
+                        onActiveTabTap = onActiveTabTap,
                     )
                 }
             }
