@@ -2820,6 +2820,62 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             // Only once the first page is on screen: [fillIn] appends to it,
             // and has nothing to append to before this.
             more?.let { fillIn(browseId, it, thumbnailUrl ?: artwork) }
+
+            // Supplement missing albums via album search (non-blocking).
+            // Premium/unavailable albums may be absent from the artist-page
+            // carousel; searching by artist name recovers them.
+            if (resolved == BrowseType.ARTIST && !name.isNullOrBlank() && sections.isNotEmpty()) {
+                viewModelScope.launch {
+                    try {
+                        val searchResult = YtMusicRepository.searchPage(name!!, SearchFilter.ALBUMS)
+                        val newAlbums = searchResult.getOrNull()?.rows?.filterIsInstance<SearchResult.Browse>()
+                            ?.filter { it.item.type == BrowseType.ALBUM }
+                            ?.filter { browseItem ->
+                                // Match by artist name in subtitle (case-insensitive, whole word).
+                                // The subtitle format is "Album • ArtistName" or just "ArtistName".
+                                val sub = browseItem.item.subtitle.lowercase()
+                                val artist = name!!.lowercase()
+                                sub.contains(artist)
+                            }
+                            ?: emptyList()
+                        if (newAlbums.isEmpty()) return@launch
+                        // Collect all existing browseIds across every shelf.
+                        val existingIds = sections.flatMapTo(HashSet()) { it.items.mapNotNull { i -> i.browseId } }
+                        val missing = newAlbums.filterNot { it.item.browseId in existingIds }
+                        if (missing.isEmpty()) return@launch
+                        // Find the Albums shelf by title (structural signal: "Albums",
+                        // "Albums & singles", etc. — match prefix case-insensitively).
+                        val albumShelfIdx = sections.indexOfFirst { s ->
+                            s.title.lowercase().startsWith("album")
+                        }
+                        if (albumShelfIdx < 0) return@launch
+                        val updatedShelves = sections.toMutableList()
+                        val existingShelf = updatedShelves[albumShelfIdx]
+                        // Build ShelfItems from BrowseItems.
+                        val newItems = missing.map { b ->
+                            ShelfItem(
+                                title = b.item.title,
+                                subtitle = b.item.subtitle,
+                                thumbnailUrl = b.item.thumbnailUrl,
+                                videoId = null,
+                                browseId = b.item.browseId,
+                                isVideo = false,
+                            )
+                        }
+                        updatedShelves[albumShelfIdx] = existingShelf.copy(
+                            items = existingShelf.items + newItems
+                        )
+                        // Update the detail page in-place.
+                        _detailStack.value = _detailStack.value.map { dp ->
+                            if (dp.browseId == browseId) dp.copy(sections = updatedShelves) else dp
+                        }
+                    } catch (_: CancellationException) {
+                        throw
+                    } catch (_: Exception) {
+                        // Non-fatal: search failure does not affect the first render.
+                    }
+                }
+            }
         }
     }
 
