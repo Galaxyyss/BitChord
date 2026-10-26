@@ -3946,8 +3946,9 @@ private fun BitChordApp(
 
                 val haptics = rememberHaptics()
                 /** Scroll the current tab's list back to top when the active tab is tapped. */
+                val scope = rememberCoroutineScope()
                 val onActiveTabTap: () -> Unit = {
-                    currentListState.animateScrollToItem(0)
+                    scope.launch { currentListState.animateScrollToItem(0) }
                     haptics.play(Haptic.Select)
                 }
 
