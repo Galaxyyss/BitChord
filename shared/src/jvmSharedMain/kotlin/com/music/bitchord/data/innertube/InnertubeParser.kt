@@ -1,7 +1,6 @@
 package com.music.bitchord.data.innertube
 
 import com.music.bitchord.auth.normalizeDataSyncId
-import com.music.bitchord.data.DebugLog
 import com.music.bitchord.data.model.Account
 import com.music.bitchord.data.model.AccountChannel
 import com.music.bitchord.data.model.ArtistNameIndex
@@ -350,22 +349,7 @@ object InnertubeParser {
                 val title = header.o("title").runs()
                 // Releases and playlists open their pages; the Videos shelf's
                 // cards play, now that the player can show them.
-                // TEMP-DIAG: log each two-row item for premium album debugging
-                val rawItems = carousel.a("contents").orEmpty()
-                rawItems.take(60).forEachIndexed { idx, content ->
-                    val renderer = content.o("musicTwoRowItemRenderer")
-                    if (renderer != null) {
-                        val rTitle = renderer.o("title")?.runs()?.joinToString("") ?: ""
-                        val navEp = renderer.o("navigationEndpoint")
-                        val browseEp = navEp?.o("browseEndpoint")
-                        val browseId = browseEp?.s("browseId")
-                        val playNavEp = navEp?.o("playNavigationEndpoint")
-                        val hasWatchEp = navEp?.o("watchEndpoint") != null
-                        val displayPolicy = renderer.s("musicItemRendererDisplayPolicy")
-                        DebugLog.d("PremiumAlbumDiag", "artistCarousel[$idx] title='$rTitle' browseId=$browseId hasBrowseEp=${browseEp!=null} hasPlayNavEp=${playNavEp!=null} hasWatchEp=$hasWatchEp displayPolicy=$displayPolicy keys=${renderer.keys.take(15)}")
-                    }
-                }
-                val items = rawItems.mapNotNull {
+                val items = carousel.a("contents").orEmpty().mapNotNull {
                     parseTwoRowItem(it.o("musicTwoRowItemRenderer"))
                 }.filter { it.browseId != null || it.isVideo }
                 val moreEndpoint = header.o("title").a("runs")?.firstNotNullOfOrNull {
@@ -618,21 +602,7 @@ object InnertubeParser {
 
     fun parseLibraryItemPage(root: JsonElement): LibraryItemPage {
         val out = LinkedHashMap<String, ShelfItem>()
-        // TEMP-DIAG: log each two-row item for premium album debugging (discography/"More" path)
-        val twoRowItems = collectRenderers(root, "musicTwoRowItemRenderer")
-        var count = 0
-        twoRowItems.take(60).forEach { renderer ->
-            val rTitle = renderer.o("title")?.runs()?.joinToString("") ?: ""
-            val navEp = renderer.o("navigationEndpoint")
-            val browseEp = navEp?.o("browseEndpoint")
-            val browseId = browseEp?.s("browseId")
-            val playNavEp = navEp?.o("playNavigationEndpoint")
-            val hasWatchEp = navEp?.o("watchEndpoint") != null
-            val displayPolicy = renderer.s("musicItemRendererDisplayPolicy")
-            DebugLog.d("PremiumAlbumDiag", "libraryPage[$count] title='$rTitle' browseId=$browseId hasBrowseEp=${browseEp!=null} hasPlayNavEp=${playNavEp!=null} hasWatchEp=$hasWatchEp displayPolicy=$displayPolicy keys=${renderer.keys.take(15)}")
-            count++
-        }
-        twoRowItems.forEach { renderer ->
+        collectRenderers(root, "musicTwoRowItemRenderer").forEach { renderer ->
             val item = parseTwoRowItem(renderer) ?: return@forEach
             item.browseId?.let { out.putIfAbsent(it, item) }
         }
