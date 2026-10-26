@@ -1457,6 +1457,10 @@ object InnertubeParser {
         if (title.isBlank()) return null
         val endpoint = renderer.o("navigationEndpoint")
         val browseId = endpoint.o("browseEndpoint").s("browseId")
+            // Fallback: unavailable/premium albums may lack a browseEndpoint
+            // but still have playNavigationEndpoint → watchPlaylistEndpoint for
+            // shuffle play; the playlist ID is a valid browse target.
+            ?: endpoint.o("playNavigationEndpoint").o("watchPlaylistEndpoint").s("playlistId")
         // History/"Listen again" cards for tracks YouTube never catalogued
         // as a proper Song carry no watchEndpoint at all — just a browseId
         // to a "non-music audio track page" prefixed MPED<videoId>. That's
@@ -1485,6 +1489,7 @@ object InnertubeParser {
             !resolvedBrowseId.startsWith("PL") &&
             !resolvedBrowseId.startsWith("MPRE") &&
             !resolvedBrowseId.startsWith("UC") &&
+            !resolvedBrowseId.startsWith("OLAK") &&
             (VIDEO_WORD.containsMatchIn(title) || VIDEO_WORD.containsMatchIn(subtitle))
         ) {
             return null
