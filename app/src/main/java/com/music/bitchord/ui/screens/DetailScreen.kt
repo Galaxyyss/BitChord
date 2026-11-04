@@ -1023,15 +1023,17 @@ private fun ReleaseHeader(
                     modifier = Modifier.matchParentSize(),
                 )
             }
-            AsyncImage(
-                model = page.thumbnailUrl.artworkAt(HEADER_ART_PX),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                onState = { artFailed = it is AsyncImagePainter.State.Error },
-                modifier = Modifier
-                    .matchParentSize()
-                    .alpha(1f - canvasCoverAlpha),
-            )
+            if (canvas == null || canvasCoverAlpha < 1f) {
+                AsyncImage(
+                    model = page.thumbnailUrl.artworkAt(HEADER_ART_PX),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    onState = { artFailed = it is AsyncImagePainter.State.Error },
+                    modifier = Modifier
+                        .matchParentSize()
+                        .alpha(if (canvas == null) 1f else 1f - canvasCoverAlpha),
+                )
+            }
             // Animated cover art, inside the same frame. Always running:
             // unlike the player's sleeve there is no transport here to follow,
             // and the page is only up while it's being read.
