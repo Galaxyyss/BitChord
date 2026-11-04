@@ -125,6 +125,9 @@ private class Teardown {
  * means a failed or slow clip simply leaves the still art showing rather than
  * flashing a black square over it. [CanvasArtwork.fallbackUrl] gets one try if
  * the first rendition won't decode.
+ * Callers that layer a still beneath this player should use [onCoverChanged] to
+ * remove that still as the video fades in, preserving effects such as a bottom
+ * fade without letting the still show through the transparent video pixels.
  */
 @OptIn(UnstableApi::class)
 @Composable
@@ -449,7 +452,9 @@ internal fun AndroidCanvasArtworkPlayer(
     // hidden behind a clip that is no longer mounted.
     val reportCover by rememberUpdatedState(onCoverChanged)
     LaunchedEffect(Unit) {
-        snapshotFlow { alpha * currentPresentationAlpha() }.collect { reportCover(it) }
+        snapshotFlow { alpha * currentPresentationAlpha() }.collect { coverAlpha ->
+            reportCover(coverAlpha)
+        }
     }
     DisposableEffect(Unit) {
         onDispose {

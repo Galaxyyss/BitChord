@@ -937,6 +937,7 @@ private fun ReleaseHeader(
     // own long-press "Open artist" already reads from.
     val artist = songs.firstOrNull()
     var artFailed by remember(page.thumbnailUrl) { mutableStateOf(false) }
+    var canvasCoverAlpha by remember(page.browseId, canvas) { mutableFloatStateOf(0f) }
     // A placeholder is a sleeve or it is nothing, as on the player: blown out
     // to the page's width it would only tint the top of the screen.
     val bleed = fullBleed && page.thumbnailUrl != null && !artFailed
@@ -1026,7 +1027,9 @@ private fun ReleaseHeader(
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 onState = { artFailed = it is AsyncImagePainter.State.Error },
-                modifier = Modifier.matchParentSize(),
+                modifier = Modifier
+                    .matchParentSize()
+                    .alpha(1f - canvasCoverAlpha),
             )
             // Animated cover art, inside the same frame. Always running:
             // unlike the player's sleeve there is no transport here to follow,
@@ -1035,6 +1038,7 @@ private fun ReleaseHeader(
                 CanvasArtworkPlayer(
                     canvas = clip,
                     isPlaying = true,
+                    onCoverChanged = { canvasCoverAlpha = it },
                     modifier = Modifier.matchParentSize(),
                 )
             }
