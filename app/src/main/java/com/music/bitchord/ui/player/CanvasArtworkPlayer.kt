@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -367,6 +368,9 @@ internal fun AndroidCanvasArtworkPlayer(
         if (!rendered || view == null) return@LaunchedEffect
         val position = player.currentPosition
         val still = view.copyStill(player.videoSize, clipAspect, contentMode, alignPortraitTop)
+        // PixelCopy's fallback catches cancellation too; a departed clip must
+        // not publish its frame after this capture effect has been cancelled.
+        if (!isActive) return@LaunchedEffect
         if (still != null) gate.holdingStill = true
         Log.d(TAG, "still captured: ${still?.let { "${it.width}x${it.height}" }} at $position")
         reportStill(still?.asImageBitmap(), position)
@@ -946,7 +950,10 @@ private fun mimeTypeOf(url: String): String? {
 
 /** The phone's decoder behind [CanvasArtworkPlayer] — see [PlayerHost.CanvasVideo]. */
 @Composable
-internal fun AndroidCanvasVideo(spec: CanvasVideoSpec, modifier: Modifier) {
+internal fun AndroidCanvasVideo(spec: CanvasVideoSpec, modifier: Modifier) = key(spec.canvas) {
+    // The native view and its listeners must share the remembered clip state's
+    // lifetime. Otherwise a song change resets that state while the old view
+    // and pending capture keep reporting into the previous clip's state.
     AndroidCanvasArtworkPlayer(
         canvas = spec.canvas,
         isPlaying = spec.isPlaying,

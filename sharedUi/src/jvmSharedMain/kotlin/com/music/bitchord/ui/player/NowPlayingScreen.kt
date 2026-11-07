@@ -1840,27 +1840,32 @@ fun NowPlayingScreen(
     // so the cover lands on the bar rather than on a ghost of the player.
     val dockFade: () -> Float = { ((dockT() - DOCK_FADE_LEAD) / (1f - DOCK_FADE_LEAD)).coerceIn(0f, 1f) }
 
-    // The clip's own frame, standing in for it while the sleeve moves — so
-    // opening, closing, and collapsing into the lyrics or the queue carry
-    // the frame that was on screen rather than swapping to the still cover
-    // and back. The clip already holds still for each of these; this is a copy
-    // of that held frame, taken as it pauses (see [CanvasArtworkPlayer]'s
-    // captureStill) and drawn by the sleeve, which is what actually moves.
-    // Kept across the player closing, so the next open starts on it and the
-    // clip is started from the same point, taking over unseen when it paints.
+    // The clip's captured frame stands in for it while the sleeve moves into
+    // lyrics or the queue, and is kept across closes for the next open. Docking
+    // uses the fresh frame already available at departure, or the static cover:
+    // the asynchronous capture must not hold up the moving sleeve's handoff.
     //
     // Not for a full-screen Spotify Canvas: the sleeve is not where that is.
     //
-    // Everything below is read where it is drawn, laid out or handed to the
-    // clip's view, never here in composition: a still lands a few frames into
-    // the movement, and reading it here would recompose this whole screen in
-    // the middle of it.
+    // Cache reads stay in draw/layout or the clip's view update, except for the
+    // unobserved docking snapshot below: a capture arriving mid-flight must
+    // not recompose the screen or replace the proxy already travelling.
     // The song's clip, not the banner's mounted player: that one is let go of
     // once the lyrics or the queue are up, and the header thumbnail they leave
     // is the still too.
     val stillClip = canvas?.takeIf { !clipFullscreen }
     val stillUrl = stillClip?.url
-    fun still(): CanvasStill? = CanvasStills.current?.takeIf { it.url == stillUrl }
+    // Choose the docking proxy once per trip and clip. A capture can finish
+    // after movement starts; replacing the proxy then also changes a portrait
+    // sleeve's height mid-flight. With no fresh frame, fly the static cover.
+    val dockStill = remember(dockMoving, stillUrl) {
+        Snapshot.withoutReadObservation {
+            val frame = CanvasStills.current
+            if (dockMoving && CanvasStills.fresh && frame?.url == stillUrl) frame else null
+        }
+    }
+    fun still(): CanvasStill? = if (dockMoving) dockStill
+        else CanvasStills.current?.takeIf { it.url == stillUrl }
     // The moves the still is for. Not the drawers and popups, under which the
     // clip pauses but nothing moves.
     val stillMoving = collapseStarted || dockMoving || lyricsOpen || queueOpen || queueDragging
@@ -1885,7 +1890,9 @@ fun NowPlayingScreen(
     }
     // Where a clip starts, read once as it mounts — see each — from its still,
     // so the first frame it paints is the one already on screen.
-    fun stillAtMount(): CanvasStill? = Snapshot.withoutReadObservation { still() }
+    fun stillAtMount(): CanvasStill? = Snapshot.withoutReadObservation {
+        if (CanvasStills.fresh) still() else null
+    }
     val onStillCaptured: (ImageBitmap?, Long) -> Unit = { image, position ->
         val url = stillClip?.url
         if (image != null && url != null) {
@@ -2465,7 +2472,9 @@ fun NowPlayingScreen(
                             //
                             // Out of sight altogether while its still stands in for it.
                             presentationAlpha = {
-                                if (stillTakesOver()) 0f
+                                // The moving sleeve must not depend on an asynchronous
+                                // capture to take over from the native video surface.
+                                if ((dockMoving && !clipFullscreen) || stillTakesOver()) 0f
                                 else (1f - 2f * p()).coerceIn(0f, 1f) * dockFade()
                             },
                             // A full-screen Spotify Canvas holds its frame for a beat
@@ -3243,7 +3252,7 @@ fun NowPlayingScreen(
                                     // again by the time it unmounts.
                                     // Whole while the clip's still is standing in for it.
                                     alpha = (
-                                        if (stillTakesOver()) 1f
+                                        if ((dockMoving && !clipFullscreen) || stillTakesOver()) 1f
                                         else if (heroClip != null) 1f - canvasCover.floatValue
                                         else 1f
                                         ) *
@@ -3360,7 +3369,7 @@ fun NowPlayingScreen(
                                     .background(Color.Black.copy(alpha = 0.18f)),
                                 contentAlignment = Alignment.Center,
                             ) {
-                                if (!art.loaded && !canvasRendered) {
+                                if (!art.loaded && (!canvasRendered || (dockMoving && !clipFullscreen))) {
                                     Icon(
                                         imageVector = BitChordIcons.MusicNote,
                                         contentDescription = null,
@@ -3415,12 +3424,14 @@ fun NowPlayingScreen(
                                     .drawWithContent {
                                         val frame = still()
                                         if (frame == null) {
-                                            if (art.loaded || !canvasRendered) drawContent()
+                                            if (art.loaded || !canvasRendered || (dockMoving && !clipFullscreen)) {
+                                                drawContent()
+                                            }
                                         } else if (
                                             // The clip's still in place of the cover —
                                             // see [stillTakesOver] — and, for the reason
                                             // above, drawn only while it can be seen.
-                                            stillTakesOver() || !canvasRendered ||
+                                            (dockMoving && !clipFullscreen) || stillTakesOver() || !canvasRendered ||
                                             (heroMode && canvasCover.floatValue < 1f)
                                         ) {
                                             drawCropped(frame.image)
@@ -3444,7 +3455,7 @@ fun NowPlayingScreen(
                                             collapseStarted || dockMoving || overlayOpen.value,
                                         // The same stand-in as the banner's clip; here
                                         // the still is drawn by the sleeve around it.
-                                        presentationAlpha = { if (stillTakesOver()) 0f else 1f },
+                                        presentationAlpha = { if (dockMoving || stillTakesOver()) 0f else 1f },
                                         startPositionMs = stillStart?.positionMs ?: 0L,
                                         revealInstantly = stillStart != null,
                                         captureStill = stillMoving,
