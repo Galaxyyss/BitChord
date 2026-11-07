@@ -287,6 +287,8 @@ internal fun LandscapeArtwork(
     modifier: Modifier = Modifier,
     /** Halts the clip for a transition — see [CanvasArtworkPlayer]'s own. */
     pausedForTransition: Boolean = false,
+    /** The recorded docking sleeve uses static artwork, not a native video surface. */
+    docking: Boolean = false,
     /**
      * The sleeve's shape, asked for each frame: its corner rounds off into the
      * mini player's cover's as the player docks into it.
@@ -320,7 +322,7 @@ internal fun LandscapeArtwork(
                 .background(Color.Black.copy(alpha = 0.18f)),
             contentAlignment = Alignment.Center,
         ) {
-            if (!artLoaded && !canvasRendered) {
+            if (!artLoaded && (!canvasRendered || docking)) {
                 Icon(
                     imageVector = BitChordIcons.MusicNote,
                     contentDescription = null,
@@ -337,13 +339,14 @@ internal fun LandscapeArtwork(
                 // portrait sleeve's note on TextureView stacking order.
                 modifier = Modifier
                     .fillMaxSize()
-                    .drawWithContent { if (artLoaded || !canvasRendered) drawContent() },
+                    .drawWithContent { if (artLoaded || !canvasRendered || docking) drawContent() },
             )
             canvas?.let { clip ->
                 CanvasArtworkPlayer(
                     canvas = clip,
                     isPlaying = isPlaying,
                     pausedForTransition = pausedForTransition,
+                    presentationAlpha = { if (docking) 0f else 1f },
                     onRenderedChanged = onCanvasRenderedChange,
                     modifier = Modifier.fillMaxSize(),
                 )
