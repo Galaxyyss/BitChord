@@ -26,6 +26,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 /**
  * Modified by Zion Huang
@@ -142,6 +144,7 @@ open class KizzyRPC(
             since = since,
             status = status ?: "online",
         )
+        currentCoroutineContext().ensureActive()
         discordWebSocket.sendActivity(presence)
     }
 

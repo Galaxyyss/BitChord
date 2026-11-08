@@ -67,8 +67,9 @@ class DiscordRPC(
         activityType: String = "listening",
         activityName: String = "",
         audioQuality: String? = null,
+        referenceTimeMillis: Long = System.currentTimeMillis(),
     ) = runCatching {
-        val currentTime = System.currentTimeMillis()
+        val currentTime = referenceTimeMillis
 
         val adjustedPlaybackTime = (currentPlaybackTimeMillis / playbackSpeed).toLong()
         val calculatedStartTime = currentTime - adjustedPlaybackTime
@@ -83,7 +84,8 @@ class DiscordRPC(
         val adjustedRemainingDuration = (remainingDuration / playbackSpeed).toLong()
 
         val buttonsList = mutableListOf<Pair<String, String>>()
-        if (button1Visible) {
+        val hasLocalId = song.videoId.startsWith("content://") || song.videoId.startsWith("file://")
+        if (button1Visible && !hasLocalId) {
             val resolvedText = resolveVariables(
                 button1Text.ifEmpty { DEFAULT_BUTTON_1 },
                 song,
@@ -111,7 +113,7 @@ class DiscordRPC(
             name = name,
             details = songTitleWithRate,
             state = song.artist,
-            detailsUrl = watchUrl(song),
+            detailsUrl = if (hasLocalId) null else watchUrl(song),
             // Asked for at a size Discord's own card actually draws — the row
             // thumbnail our lists use is 160px and reads soft blown up to the
             // 96dp sleeve in a presence card.

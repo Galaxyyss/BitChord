@@ -125,6 +125,7 @@ import com.music.bitchord.data.LikeState
 import com.music.bitchord.data.NerdStats
 import com.music.bitchord.data.TrackLog
 import com.music.bitchord.data.discord.DiscordRPC
+import com.music.bitchord.data.discord.DiscordArtwork
 import com.music.bitchord.data.discord.discordAudioQualityLine
 import com.music.bitchord.data.innertube.PlaybackTracker
 import com.music.bitchord.data.stats.ListeningRecorder
@@ -697,6 +698,11 @@ class PlaybackService : MediaLibraryService() {
      * finish in, leaving the profile on a track the listener passed seconds ago.
      */
     private var discordUpdateJob: Job? = null
+
+    private var discordArtworkJob: Job? = null
+    private var discordArtworkSong: Song? = null
+    private data class DiscordTiming(val position: Long, val duration: Long, val speed: Float, val time: Long)
+    private var discordTiming: DiscordTiming? = null
 
     /**
      * Whether a presence has been published and not yet taken down.
@@ -7593,6 +7599,8 @@ class PlaybackService : MediaLibraryService() {
                     // can't leave the old one's socket up publishing under a
                     // profile the user has just disconnected.
                     discordUpdateJob?.cancel()
+                    discordArtworkJob?.cancel()
+                    discordArtworkSong = null
                     discordRpc?.let { rpc ->
                         val wasUp = discordPresenceUp
                         discordPresenceUp = false
@@ -7695,6 +7703,8 @@ class PlaybackService : MediaLibraryService() {
                     // it believes it is still connected: the push is what makes
                     // it prove otherwise.
                     if (discordPresenceUp) {
+                        discordArtworkJob?.cancel()
+                        discordArtworkSong = null
                         player?.takeIf { p -> p.isPlaying }?.let(::pushDiscordPresence)
                     }
                 }
@@ -7708,14 +7718,35 @@ class PlaybackService : MediaLibraryService() {
      * never connect an account, and this is called from the middle of every
      * track change.
      */
-    private fun pushDiscordPresence(exoPlayer: ExoPlayer) {
+    private fun pushDiscordPresence(exoPlayer: ExoPlayer) = pushDiscordPresence(exoPlayer, null)
+
+    private fun pushDiscordPresence(exoPlayer: ExoPlayer, previousTiming: DiscordTiming?) {
         val rpc = discordRpc ?: return
         val song = exoPlayer.currentMediaItem?.toSong() ?: return
+        val originalArtwork = song.artworkAt(480)
+        val needsArtwork = originalArtwork?.let(DiscordArtwork::isWebUrl) != true &&
+            (song.localUri != null || song.videoId.startsWith("content://") || song.videoId.startsWith("file://"))
+        val cachedArtwork = if (needsArtwork) DiscordArtwork.cached(song) else null
+        if (!needsArtwork || cachedArtwork != null || discordArtworkSong != song) {
+            discordArtworkJob?.cancel()
+            discordArtworkSong = null
+        }
+        if (needsArtwork && cachedArtwork == null && discordArtworkSong != song) {
+            discordArtworkSong = song
+            discordArtworkJob = scope.launch {
+                val artwork = withContext(Dispatchers.IO) { DiscordArtwork.resolve(song) }
+                if (artwork != null && discordRpc === rpc && discordPresenceUp &&
+                    player === exoPlayer && exoPlayer.isPlaying && exoPlayer.currentMediaItem?.toSong() == song
+                ) {
+                    pushDiscordPresence(exoPlayer, discordTiming)
+                }
+            }
+        }
         // Read on the main thread, before the push is handed to IO: by the time
         // a coroutine gets to run, the queue may have moved on, and ExoPlayer's
         // state is only legal to read from the thread it was built on.
-        val positionMs = exoPlayer.currentPosition.coerceAtLeast(0L)
-        val durationMs = exoPlayer.duration.takeIf { it > 0 } ?: 0L
+        val positionMs = previousTiming?.position ?: exoPlayer.currentPosition.coerceAtLeast(0L)
+        val durationMs = previousTiming?.duration ?: (exoPlayer.duration.takeIf { it > 0 } ?: 0L)
         // The listener's own rate, not the player's instantaneous one.
         //
         // This is called from the middle of a track change, which is exactly
@@ -7727,7 +7758,9 @@ class PlaybackService : MediaLibraryService() {
         // track that had already been put back on the listener's own tempo.
         // The setting is what the track plays at for all but the handoff, so
         // it is both the honest tag and the right divisor for the countdown.
-        val speed = AppSettings.playbackSpeed.value
+        val speed = previousTiming?.speed ?: AppSettings.playbackSpeed.value
+        val referenceTime = previousTiming?.time ?: System.currentTimeMillis()
+        discordTiming = DiscordTiming(positionMs, durationMs, speed, referenceTime)
         val audioQuality = discordAudioQualityLine(NerdStats.current.value)
             .takeIf { AppSettings.discordShowAudioQuality.value }
 
@@ -7735,7 +7768,7 @@ class PlaybackService : MediaLibraryService() {
         discordPresenceUp = true
         discordUpdateJob = scope.launch(Dispatchers.IO) {
             rpc.updateSong(
-                song = song,
+                song = if (cachedArtwork != null) song.copy(thumbnailUrl = cachedArtwork) else song,
                 currentPlaybackTimeMillis = positionMs,
                 durationMillis = durationMs,
                 playbackSpeed = speed,
@@ -7748,6 +7781,7 @@ class PlaybackService : MediaLibraryService() {
                 activityType = AppSettings.discordActivityType.value,
                 activityName = AppSettings.discordActivityName.value,
                 audioQuality = audioQuality,
+                referenceTimeMillis = referenceTime,
             ).onFailure {
                 TrackLog.d("BitChord", "Discord presence failed: ${it.message}", about = song.videoId)
             }
@@ -7762,6 +7796,8 @@ class PlaybackService : MediaLibraryService() {
         val rpc = discordRpc ?: return
         if (!discordPresenceUp) return
         discordPresenceUp = false
+        discordArtworkJob?.cancel()
+        discordArtworkSong = null
         discordUpdateJob?.cancel()
         discordUpdateJob = scope.launch(Dispatchers.IO) {
             runCatching { rpc.close() }
