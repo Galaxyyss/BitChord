@@ -14,12 +14,14 @@ import com.music.bitchord.data.model.creditSegments
 import com.music.bitchord.sharedui.resources.*
 
 import org.jetbrains.compose.resources.DrawableResource
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.Crossfade
-import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -53,6 +55,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -89,9 +92,12 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import org.jetbrains.compose.resources.painterResource
@@ -492,6 +498,7 @@ internal fun TransportRow(
             onClick = onPrevious,
             enabled = previousEnabled,
             haptic = Haptic.SkipPrevious,
+            skipDirection = -1,
         )
         if (isLoading) {
             // Same footprint as the play/pause target — a smaller box here
@@ -511,6 +518,7 @@ internal fun TransportRow(
                 touchSize = playTouch,
                 onClick = onPlayPause,
                 haptic = if (isPlaying) Haptic.Pause else Haptic.Resume,
+                animatedPlayPause = true,
             )
         }
         TransportGlyph(
@@ -522,6 +530,7 @@ internal fun TransportRow(
             onClick = onNext,
             enabled = nextEnabled,
             haptic = Haptic.SkipNext,
+            skipDirection = 1,
         )
     }
 }
@@ -804,8 +813,30 @@ private fun TransportGlyph(
     haptic: Haptic = Haptic.Tap,
     /** Vertical squash of the glyph alone; its width and touch box are untouched. */
     heightScale: Float = 1f,
+    /** Direction of the expanded player's two-arrow motion; zero keeps a static glyph. */
+    skipDirection: Int = 0,
+    /** Enable the expanded player's state-driven play/pause transition. */
+    animatedPlayPause: Boolean = false,
 ) {
     val haptics = rememberHaptics()
+    val animationTrigger = if (skipDirection != 0) remember { mutableLongStateOf(0L) } else null
+    val skipProgress = if (skipDirection != 0) remember { Animatable(0f) } else null
+    val skipDistancePx = if (skipDirection != 0) {
+        with(LocalDensity.current) { 2.5.dp.toPx() }
+    } else {
+        0f
+    }
+    if (skipDirection != 0) LaunchedEffect(animationTrigger?.longValue) {
+        if ((animationTrigger?.longValue ?: 0L) > 0L) {
+            val progress = requireNotNull(skipProgress)
+            progress.snapTo(0f)
+            progress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+            )
+            progress.snapTo(0f)
+        }
+    }
     // Faded rather than hidden: the row keeps its shape at the ends of a queue.
     val alpha by animateFloatAsState(
         targetValue = if (enabled) 1f else 0.3f,
@@ -820,18 +851,71 @@ private fun TransportGlyph(
                 enabled = enabled,
             ) {
                 haptics.play(haptic)
+                animationTrigger?.let { it.longValue++ }
                 onClick()
-            },
+            }
+            .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center,
     ) {
-        Icon(
-            painter = painterResource(icon),
-            contentDescription = contentDescription,
-            tint = Color.White.copy(alpha = alpha),
-            modifier = Modifier
-                .size(size)
-                .then(if (heightScale != 1f) Modifier.graphicsLayer { scaleY = heightScale } else Modifier),
-        )
+        val glyphModifier = Modifier
+            .size(size)
+            .then(if (heightScale != 1f) Modifier.graphicsLayer { scaleY = heightScale } else Modifier)
+        when {
+            skipDirection != 0 -> {
+                val painter = painterResource(icon)
+                Canvas(glyphModifier) {
+                    val canvasSize = this.size
+                    val split = canvasSize.width * (if (skipDirection > 0) 468.5f / 960f else 491f / 960f)
+                    val progress = requireNotNull(skipProgress).value
+                    val firstProgress = kotlin.math.sin(Math.PI * progress).toFloat()
+                    val secondPhase = ((progress - 0.12f) / 0.88f).coerceIn(0f, 1f)
+                    val secondProgress = kotlin.math.sin(Math.PI * secondPhase).toFloat()
+                    val colorFilter = ColorFilter.tint(Color.White)
+                    val firstOffset = skipDirection * skipDistancePx * firstProgress
+                    val secondOffset = skipDirection * skipDistancePx * secondProgress
+                    clipRect(right = split + firstOffset) {
+                        translate(left = firstOffset) {
+                            with(painter) {
+                                draw(canvasSize, alpha = alpha * (1f - 0.22f * firstProgress), colorFilter = colorFilter)
+                            }
+                        }
+                    }
+                    clipRect(left = split + secondOffset) {
+                        translate(left = secondOffset) {
+                            with(painter) {
+                                draw(canvasSize, alpha = alpha * (1f - 0.22f * secondProgress), colorFilter = colorFilter)
+                            }
+                        }
+                    }
+                }
+            }
+            animatedPlayPause -> AnimatedContent(
+                targetState = icon,
+                transitionSpec = {
+                    (fadeIn(tween(90)) + scaleIn(
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                        initialScale = 0.82f,
+                    )) togetherWith (fadeOut(tween(90)) + scaleOut(
+                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+                        targetScale = 0.92f,
+                    ))
+                },
+                label = "playPauseGlyphTransition",
+            ) { currentIcon ->
+                Icon(
+                    painter = painterResource(currentIcon),
+                    contentDescription = null,
+                    tint = Color.White.copy(alpha = alpha),
+                    modifier = Modifier.size(size),
+                )
+            }
+            else -> Icon(
+                painter = painterResource(icon),
+                contentDescription = null,
+                tint = Color.White.copy(alpha = alpha),
+                modifier = glyphModifier,
+            )
+        }
     }
 }
 
