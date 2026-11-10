@@ -51,6 +51,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.Canvas
@@ -818,7 +819,8 @@ private fun TransportGlyph(
     val haptics = rememberHaptics()
     val animationTrigger = if (skipDirection != 0) remember { mutableLongStateOf(0L) } else null
     val skipProgress = if (skipDirection != 0) remember { Animatable(0f) } else null
-    val skipDistance = if (skipDirection != 0) size * 0.07f else 0.dp
+    val skipGutter = if (skipDirection != 0) 4.5.dp else 0.dp
+    val skipDistance = if (skipDirection != 0) size * 0.08f else 0.dp
     val skipDistancePx = if (skipDirection != 0) {
         with(LocalDensity.current) { skipDistance.toPx() }
     } else {
@@ -827,7 +829,12 @@ private fun TransportGlyph(
     if (skipDirection != 0) LaunchedEffect(animationTrigger?.longValue) {
         if ((animationTrigger?.longValue ?: 0L) > 0L) {
             val progress = requireNotNull(skipProgress)
-            progress.snapTo(0f)
+            if (progress.value > 0f) {
+                progress.animateTo(
+                    targetValue = 0f,
+                    animationSpec = tween(durationMillis = 70, easing = FastOutSlowInEasing),
+                )
+            }
             progress.animateTo(
                 targetValue = 1f,
                 animationSpec = tween(durationMillis = 320, easing = LinearEasing),
@@ -856,7 +863,13 @@ private fun TransportGlyph(
         contentAlignment = Alignment.Center,
     ) {
         val glyphModifier = Modifier
-            .size(size)
+            .then(
+                if (skipDirection != 0) {
+                    Modifier.requiredSize(width = size + skipGutter * 2f, height = size)
+                } else {
+                    Modifier.size(size)
+                },
+            )
             .then(if (heightScale != 1f) Modifier.graphicsLayer { scaleY = heightScale } else Modifier)
         when {
             skipDirection != 0 -> {
@@ -870,17 +883,18 @@ private fun TransportGlyph(
                 )
                 Canvas(glyphModifier) {
                     val canvasSize = this.size
+                    val iconSize = Size(canvasSize.width - 2f * skipDistancePx, canvasSize.height)
                     val progress = requireNotNull(skipProgress).value
                     val leadingTravel = skipArrowTravel(progress, start = 0f, peak = 0.18f, settle = 0.42f)
                     val trailingTravel = skipArrowTravel(progress, start = 0.30f, peak = 0.48f, settle = 0.84f)
-                    translate(left = skipDirection * skipDistancePx * leadingTravel) {
+                    translate(left = skipDistancePx + skipDirection * skipDistancePx * leadingTravel) {
                         with(leadingPainter) {
-                            draw(canvasSize, alpha = alpha * (1f - 0.10f * leadingTravel))
+                            draw(iconSize, alpha = alpha * (1f - 0.10f * leadingTravel))
                         }
                     }
-                    translate(left = skipDirection * skipDistancePx * trailingTravel) {
+                    translate(left = skipDistancePx + skipDirection * skipDistancePx * trailingTravel) {
                         with(trailingPainter) {
-                            draw(canvasSize, alpha = alpha * (1f - 0.10f * trailingTravel))
+                            draw(iconSize, alpha = alpha * (1f - 0.10f * trailingTravel))
                         }
                     }
                 }
