@@ -821,6 +821,11 @@ private fun TransportGlyph(
     val skipProgress = if (skipDirection != 0) remember { Animatable(0f) } else null
     val skipGutter = if (skipDirection != 0) 4.5.dp else 0.dp
     val skipDistance = if (skipDirection != 0) size * 0.08f else 0.dp
+    val skipGutterPx = if (skipDirection != 0) {
+        with(LocalDensity.current) { skipGutter.toPx() }
+    } else {
+        0f
+    }
     val skipDistancePx = if (skipDirection != 0) {
         with(LocalDensity.current) { skipDistance.toPx() }
     } else {
@@ -883,16 +888,16 @@ private fun TransportGlyph(
                 )
                 Canvas(glyphModifier) {
                     val canvasSize = this.size
-                    val iconSize = Size(canvasSize.width - 2f * skipDistancePx, canvasSize.height)
+                    val iconSize = Size(canvasSize.width - 2f * skipGutterPx, canvasSize.height)
                     val progress = requireNotNull(skipProgress).value
                     val leadingTravel = skipArrowTravel(progress, start = 0f, peak = 0.18f, settle = 0.42f)
                     val trailingTravel = skipArrowTravel(progress, start = 0.30f, peak = 0.48f, settle = 0.84f)
-                    translate(left = skipDistancePx + skipDirection * skipDistancePx * leadingTravel) {
+                    translate(left = skipGutterPx + skipDirection * skipDistancePx * leadingTravel) {
                         with(leadingPainter) {
                             draw(iconSize, alpha = alpha * (1f - 0.10f * leadingTravel))
                         }
                     }
-                    translate(left = skipDistancePx + skipDirection * skipDistancePx * trailingTravel) {
+                    translate(left = skipGutterPx + skipDirection * skipDistancePx * trailingTravel) {
                         with(trailingPainter) {
                             draw(iconSize, alpha = alpha * (1f - 0.10f * trailingTravel))
                         }
