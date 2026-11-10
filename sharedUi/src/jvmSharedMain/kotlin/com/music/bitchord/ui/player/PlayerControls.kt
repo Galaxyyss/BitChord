@@ -20,8 +20,6 @@ import androidx.compose.animation.Crossfade
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -79,6 +77,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -92,12 +91,10 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import org.jetbrains.compose.resources.painterResource
@@ -821,8 +818,9 @@ private fun TransportGlyph(
     val haptics = rememberHaptics()
     val animationTrigger = if (skipDirection != 0) remember { mutableLongStateOf(0L) } else null
     val skipProgress = if (skipDirection != 0) remember { Animatable(0f) } else null
+    val skipDistance = if (skipDirection != 0) size * 0.07f else 0.dp
     val skipDistancePx = if (skipDirection != 0) {
-        with(LocalDensity.current) { 2.5.dp.toPx() }
+        with(LocalDensity.current) { skipDistance.toPx() }
     } else {
         0f
     }
@@ -832,7 +830,7 @@ private fun TransportGlyph(
             progress.snapTo(0f)
             progress.animateTo(
                 targetValue = 1f,
-                animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+                animationSpec = tween(durationMillis = 320, easing = LinearEasing),
             )
             progress.snapTo(0f)
         }
@@ -862,53 +860,36 @@ private fun TransportGlyph(
             .then(if (heightScale != 1f) Modifier.graphicsLayer { scaleY = heightScale } else Modifier)
         when {
             skipDirection != 0 -> {
-                val painter = painterResource(icon)
+                val leadingPainter = painterResource(
+                    if (skipDirection > 0) Res.drawable.ic_player_next_leading
+                    else Res.drawable.ic_player_previous_leading,
+                )
+                val trailingPainter = painterResource(
+                    if (skipDirection > 0) Res.drawable.ic_player_next_trailing
+                    else Res.drawable.ic_player_previous_trailing,
+                )
                 Canvas(glyphModifier) {
                     val canvasSize = this.size
-                    val split = canvasSize.width * (if (skipDirection > 0) 468.5f / 960f else 491f / 960f)
                     val progress = requireNotNull(skipProgress).value
-                    val firstProgress = kotlin.math.sin(Math.PI * progress).toFloat()
-                    val secondPhase = ((progress - 0.12f) / 0.88f).coerceIn(0f, 1f)
-                    val secondProgress = kotlin.math.sin(Math.PI * secondPhase).toFloat()
-                    val colorFilter = ColorFilter.tint(Color.White)
-                    val firstOffset = skipDirection * skipDistancePx * firstProgress
-                    val secondOffset = skipDirection * skipDistancePx * secondProgress
-                    clipRect(right = split + firstOffset) {
-                        translate(left = firstOffset) {
-                            with(painter) {
-                                draw(canvasSize, alpha = alpha * (1f - 0.22f * firstProgress), colorFilter = colorFilter)
-                            }
+                    val leadingTravel = skipArrowTravel(progress, start = 0f, peak = 0.18f, settle = 0.42f)
+                    val trailingTravel = skipArrowTravel(progress, start = 0.30f, peak = 0.48f, settle = 0.84f)
+                    translate(left = skipDirection * skipDistancePx * leadingTravel) {
+                        with(leadingPainter) {
+                            draw(canvasSize, alpha = alpha * (1f - 0.10f * leadingTravel))
                         }
                     }
-                    clipRect(left = split + secondOffset) {
-                        translate(left = secondOffset) {
-                            with(painter) {
-                                draw(canvasSize, alpha = alpha * (1f - 0.22f * secondProgress), colorFilter = colorFilter)
-                            }
+                    translate(left = skipDirection * skipDistancePx * trailingTravel) {
+                        with(trailingPainter) {
+                            draw(canvasSize, alpha = alpha * (1f - 0.10f * trailingTravel))
                         }
                     }
                 }
             }
-            animatedPlayPause -> AnimatedContent(
-                targetState = icon,
-                transitionSpec = {
-                    (fadeIn(tween(90)) + scaleIn(
-                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-                        initialScale = 0.82f,
-                    )) togetherWith (fadeOut(tween(90)) + scaleOut(
-                        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-                        targetScale = 0.92f,
-                    ))
-                },
-                label = "playPauseGlyphTransition",
-            ) { currentIcon ->
-                Icon(
-                    painter = painterResource(currentIcon),
-                    contentDescription = null,
-                    tint = Color.White.copy(alpha = alpha),
-                    modifier = Modifier.size(size),
-                )
-            }
+            animatedPlayPause -> AnimatedPlayPauseGlyph(
+                icon = icon,
+                size = size,
+                tint = Color.White.copy(alpha = alpha),
+            )
             else -> Icon(
                 painter = painterResource(icon),
                 contentDescription = null,
@@ -917,6 +898,47 @@ private fun TransportGlyph(
             )
         }
     }
+}
+
+/** Change the glyph at its smallest point, so two different silhouettes never overlap. */
+@Composable
+private fun AnimatedPlayPauseGlyph(icon: DrawableResource, size: Dp, tint: Color) {
+    var displayedIcon by remember { mutableStateOf(icon) }
+    val scale = remember { Animatable(1f) }
+    LaunchedEffect(icon) {
+        if (displayedIcon == icon) {
+            scale.animateTo(
+                targetValue = 1f,
+                animationSpec = spring(dampingRatio = 0.82f, stiffness = 900f),
+            )
+            return@LaunchedEffect
+        }
+        scale.animateTo(
+            targetValue = 0.9f,
+            animationSpec = tween(durationMillis = 70, easing = FastOutSlowInEasing),
+        )
+        displayedIcon = icon
+        scale.animateTo(
+            targetValue = 1f,
+            animationSpec = spring(dampingRatio = 0.82f, stiffness = 900f),
+        )
+    }
+    Icon(
+        painter = painterResource(displayedIcon),
+        contentDescription = null,
+        tint = tint,
+        modifier = Modifier.size(size).graphicsLayer {
+            scaleX = scale.value
+            scaleY = scale.value
+        },
+    )
+}
+
+/** A smooth forward-and-return pulse used at different times for each arrowhead. */
+private fun skipArrowTravel(progress: Float, start: Float, peak: Float, settle: Float): Float = when {
+    progress <= start || progress >= settle -> 0f
+    progress < peak -> FastOutSlowInEasing.transform((progress - start) / (peak - start))
+    else -> 1f - FastOutSlowInEasing.transform((progress - peak) / (settle - peak))
 }
 
 /** The skip glyphs' width, and their touch box, beside the larger play button. */
