@@ -179,10 +179,10 @@ fun PlayerPlayPauseGlyph(
                 val pulse = if (visible) motion.pulse.value else 1f
                 scale(pulse) {
                     if (geometry == null) {
-                        drawContent()
+                        this@onDrawWithContent.drawContent()
                     } else if (p == 0f || p == 1f) {
                         if ((p == 1f) == motion.playing.value) {
-                            drawContent()
+                            this@onDrawWithContent.drawContent()
                         } else {
                             // During reversal, an endpoint can still be the
                             // outgoing state. Never draw the target icon there.

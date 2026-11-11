@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.vector.PathNode
@@ -375,7 +376,7 @@ internal fun Modifier.playerPressCircle(
             0f to fill,
             SkipMotion.CircleFeatherStart to fill,
             1f to tint.copy(alpha = 0f),
-            center = center,
+            center = Offset(size.width / 2f, size.height / 2f),
             radius = radius,
         )
         onDrawBehind {
