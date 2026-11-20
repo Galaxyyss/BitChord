@@ -91,6 +91,7 @@ internal class AutoMixCanvasTracks(
     var windowOpen by mutableStateOf(false)
     var progress by mutableFloatStateOf(0f)
     val liveIncoming get() = incomingAccepted && incomingReady
+    val revealsSpotifyCanvas get() = windowOpen && liveIncoming && incomingClip?.source == CanvasSource.SPOTIFY
     val selectedStill get() = choiceSealed && !liveIncoming
     val liveOutgoing get() = started && outgoingReady && pinnedClip != null
     val sharesClip get() = pinnedClip?.url?.let { it == incomingClip?.url } == true

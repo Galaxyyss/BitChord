@@ -1609,6 +1609,9 @@ fun NowPlayingScreen(
     val spotifyCanvasFullscreen = spotifyCanvasOnPhone &&
         heroClip?.source == CanvasSource.SPOTIFY
     val spotifyCanvasPresentation = spotifyCanvasFullscreen && canvasRendered
+    val spotifyGlassReveal = pair?.takeIf {
+        incomingFullWindow && !collapsePastHalf && it.revealsSpotifyCanvas
+    }
     // The clip's player, which outlives [heroClip] by the second half of a
     // collapse: mounted from the moment the player is asked back, and let go
     // of once the sleeve has settled into the header. Faded out by the half
@@ -2894,7 +2897,7 @@ fun NowPlayingScreen(
                 // above the video. When the deck slides away this layer leaves with
                 // it as well.
                 AnimatedVisibility(
-                    visible = spotifyCanvasPresentation && spotifyCanvasControlsOpen,
+                    visible = (spotifyCanvasPresentation || spotifyGlassReveal != null) && spotifyCanvasControlsOpen,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
@@ -2905,9 +2908,21 @@ fun NowPlayingScreen(
                     // Subscribe only while Spotify's glass layer exists. Static art and
                     // non-Spotify motion covers do not observe this new state at all.
                     val reduceDynamicBlur by PlayerSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
+                    // Keep one glass layer through promotion. For incoming-only glass,
+                    // use the same clock as the live source. Retain that clock during
+                    // exit so cancellation cannot flash the glass at full opacity.
+                    var exitingReveal by remember { mutableStateOf<AutoMixCanvasTracks?>(null) }
+                    SideEffect {
+                        if (spotifyCanvasPresentation) exitingReveal = null
+                        else if (spotifyGlassReveal != null) exitingReveal = spotifyGlassReveal
+                    }
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
+                            .graphicsLayer {
+                                alpha = if (spotifyCanvasPresentation) 1f
+                                else (spotifyGlassReveal ?: exitingReveal)?.standbyOpacity() ?: 1f
+                            }
                             .then(
                                 // Flat, too, while a drawer or the ⋯ menu is up: those
                                 // blur the playing Canvas live themselves, and the

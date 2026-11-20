@@ -1,6 +1,7 @@
 package com.music.bitchord.ui.player
 
 import com.music.bitchord.data.canvas.CanvasArtwork
+import com.music.bitchord.data.canvas.CanvasSource
 import com.music.bitchord.data.model.QueueEntryIdentity
 import com.music.bitchord.playback.AutoMixArtworkTuning
 import com.music.bitchord.playback.AutoMixArtworkWindow
@@ -93,6 +94,29 @@ class AutoMixCanvasTest {
         assertNull(owner.visual)
         assertSame(tracks, owner.promoted)
         assertSame(clip, owner.promoted?.incomingClip)
+    }
+
+    @Test
+    fun spotifyGlassRequiresAnAcceptedLiveClipAndAnOpenWindow() {
+        val tracks = AutoMixCanvasTracks(visual.generation, outgoing, incoming, null) { visual }
+        tracks.incomingClip = clip.copy(source = CanvasSource.SPOTIFY)
+        tracks.incomingReady = true
+        tracks.windowOpen = true
+        assertFalse(tracks.revealsSpotifyCanvas)
+        assertTrue(tracks.sealIncoming())
+        assertTrue(tracks.revealsSpotifyCanvas)
+        tracks.windowOpen = false
+        assertFalse(tracks.revealsSpotifyCanvas)
+        tracks.windowOpen = true
+        tracks.reportIncoming(false)
+        assertFalse(tracks.revealsSpotifyCanvas)
+
+        val other = AutoMixCanvasTracks(visual.generation, outgoing, incoming, null) { visual }
+        other.incomingClip = clip.copy(source = CanvasSource.APPLE)
+        other.incomingReady = true
+        other.windowOpen = true
+        assertTrue(other.sealIncoming())
+        assertFalse(other.revealsSpotifyCanvas)
     }
 
     @Test
