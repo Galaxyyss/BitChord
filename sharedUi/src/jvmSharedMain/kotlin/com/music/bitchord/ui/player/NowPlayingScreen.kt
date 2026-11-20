@@ -19,6 +19,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.snap
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.channels.Channel
 import androidx.compose.animation.core.AnimationVector1D
@@ -1570,6 +1571,7 @@ fun NowPlayingScreen(
     val art = rememberPlayerArtwork(remoteArt)
     val autoMixCover = rememberAutoMixCover(coverEntry, art)
     val autoMixFrames = autoMixCover.framesFor(coverEntry)
+    val heroIncomingStill = autoMixFrames.incomingStillOverCanvas(pair).takeIf { heroMode }
     fun coverLoaded() = autoMixFrames != null || art.loaded
     // Sticky, unlike [PlayerArtwork.loaded]: the banner is the shape of the player rather
     // than a property of the track in it. Waiting on each new cover would
@@ -1670,16 +1672,15 @@ fun NowPlayingScreen(
     // the sleeve goes from banner to thumbnail as one movement, rather than the
     // banner waiting on a threshold and then dissolving into a finished
     // thumbnail — see `sleeveRect` down in the layout.
+    val revealSquareStill = !fullBleedArt && pair?.selectedStill == true && heroIncomingStill != null
     val heroT = animateFloatAsState(
         targetValue = if (
             // Latched first, so a clip coming and going isn't listened for
             // once the banner has settled — see [heroSettled].
             heroMode && (heroSettled || coverLoaded() || canvasRendered) &&
-                // A Spotify-only hero is going back to the square sleeve. Let the
-                // incoming still settle into that frame before the handoff, not after it.
-                !(!fullBleedArt && pair?.liveOutgoing == true && pair.selectedStill && autoMixFrames?.incoming != null)
+                !revealSquareStill
         ) 1f else 0f,
-        animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+        animationSpec = if (revealSquareStill) snap() else tween(durationMillis = 420, easing = FastOutSlowInEasing),
         label = "heroCanvas",
     )
     val spotifyChromeAlpha by animateFloatAsState(
@@ -2779,7 +2780,7 @@ fun NowPlayingScreen(
                                     // the outgoing clip until the exact promotion frame.
                                     outgoingArtworkTailAlpha(pair.reveal()) * clipTransitionAlpha()
                                 }
-                                else if (pair?.liveOutgoing == true && !pair.liveIncoming && autoMixFrames?.incoming != null && !stillMoving) {
+                                else if (pair != null && heroIncomingStill != null && !stillMoving) {
                                     outgoingArtworkTailAlpha(pair.reveal()) * clipTransitionAlpha()
                                 }
                                 else if (pair != null && !pair.sharesClip && (portrait || fullscreen) &&
@@ -3400,8 +3401,14 @@ fun NowPlayingScreen(
                         // How far the expanded sleeve is the banner rather than the
                         // card. Zero until there is a banner to be, which is to say
                         // until [heroHeight] and the player's width have been measured.
-                        fun bannerShare(): Float =
-                            if (heroHeight > 0.dp && playerBounds.width > 0) heroT.value else 0f
+                        // The incoming still is the ordinary sleeve, not a still of the
+                        // outgoing clip. Don't reveal it while interpolating toward its slot.
+                        val staticDestination = heroIncomingStill != null && !stillMoving
+                        fun bannerShare(): Float = when {
+                            heroHeight <= 0.dp || playerBounds.width <= 0 -> 0f
+                            staticDestination -> if (fullBleedArt) 1f else 0f
+                            else -> heroT.value
+                        }
                         // How much of the banner is on screen: its share, given up as
                         // the sleeve collapses — the same movement as the collapse
                         // rather than a fade chained after it.
@@ -3445,7 +3452,8 @@ fun NowPlayingScreen(
                                     // is, from the same top edge.
                                     size = Size(
                                         playerBounds.width.toFloat(),
-                                        stillBottomPx().takeIf { it > 0f } ?: heroHeight.roundToPx().toFloat(),
+                                        if (staticDestination) heroHeight.roundToPx().toFloat()
+                                        else stillBottomPx().takeIf { it > 0f } ?: heroHeight.roundToPx().toFloat(),
                                     ),
                                 )
                             }
@@ -3635,7 +3643,9 @@ fun NowPlayingScreen(
                                 // The banner dissolves into the backdrop where the
                                 // card's bottom edge would have been, and firms back
                                 // up into that edge as it collapses.
-                                .artworkBottomFade(::sleeveShown, ::stillFadeFraction),
+                                .artworkBottomFade(::sleeveShown) {
+                                    if (staticDestination) HERO_FADE_FRACTION else stillFadeFraction()
+                                },
                         ) {
                             // Empty state lives on this tile, not the AsyncImage: a
                             // background *and* a painter both trying to fill the same
@@ -3709,9 +3719,6 @@ fun NowPlayingScreen(
                                             },
                                     )
                                 }
-                            }
-                            val heroIncomingStill = autoMixFrames?.incoming.takeIf {
-                                heroMode && pair?.liveOutgoing == true && !pair.liveIncoming
                             }
                             if (heroIncomingStill != null && pair != null) {
                                 AutoMixIncomingStill(

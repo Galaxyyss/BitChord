@@ -276,6 +276,11 @@ internal fun AutoMixCoverFrames?.baseUnderCanvas(pair: AutoMixCanvasTracks?): Au
     if (this != null && pair != null && (pair.liveOutgoing || pair.liveIncoming)) AutoMixCoverFrames(base)
     else this
 
+/** Only the prepared still for this live pair can take over the artwork slot. */
+internal fun AutoMixCoverFrames?.incomingStillOverCanvas(pair: AutoMixCanvasTracks?): DecodedAutoMixCover? =
+    if (pair?.liveOutgoing == true && !pair.liveIncoming && this?.generation == pair.generation) incoming
+    else null
+
 /** Retire the part of the outgoing picture not covered by the destination (bounds or bottom fade). */
 internal fun outgoingArtworkTailAlpha(progress: Float): Float {
     val start = 0.8f

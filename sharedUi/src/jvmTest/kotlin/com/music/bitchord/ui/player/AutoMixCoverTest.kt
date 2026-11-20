@@ -1,6 +1,7 @@
 package com.music.bitchord.ui.player
 
 import coil3.Image
+import com.music.bitchord.data.canvas.CanvasArtwork
 import com.music.bitchord.data.model.QueueEntryIdentity
 import com.music.bitchord.playback.AutoMixArtworkWindow
 import com.music.bitchord.playback.AutoMixVisualPhase
@@ -89,10 +90,27 @@ class AutoMixCoverTest {
         assertEquals(2L, frames.generation)
     }
 
-    private fun cover() = DecodedAutoMixCover(object : Image {
-        override val width = 1
-        override val height = 1
-        override val size = 4L
+    @Test
+    fun liveToStillSelectsOnlyThePreparedDestinationOfThisGeneration() {
+        val base = cover(3, 4)
+        val next = cover(4, 4)
+        val frames = AutoMixCoverFrames(base, next, visual.generation)
+        val tracks = AutoMixCanvasTracks(visual.generation, outgoing, incoming, CanvasArtwork("outgoing.mp4"))
+        assertNull(frames.incomingStillOverCanvas(tracks))
+        tracks.started = true
+        assertSame(next, frames.incomingStillOverCanvas(tracks))
+        assertNull(AutoMixCoverFrames(base, next, visual.generation + 1).incomingStillOverCanvas(tracks))
+        assertNull(AutoMixCoverFrames(next).incomingStillOverCanvas(tracks))
+        tracks.incomingClip = CanvasArtwork("incoming.mp4")
+        tracks.incomingReady = true
+        tracks.sealIncoming()
+        assertNull(frames.incomingStillOverCanvas(tracks))
+    }
+
+    private fun cover(width: Int = 1, height: Int = 1) = DecodedAutoMixCover(object : Image {
+        override val width = width
+        override val height = height
+        override val size = 4L * width * height
         override val shareable = true
         override fun draw(canvas: Canvas) = error("This test exercises cover ownership, not rendering")
     }, null)
