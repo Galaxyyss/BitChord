@@ -1,7 +1,6 @@
 package com.music.bitchord.ui.player
 
 import com.music.bitchord.data.canvas.CanvasArtwork
-import com.music.bitchord.data.canvas.CanvasSource
 import com.music.bitchord.data.model.QueueEntryIdentity
 import com.music.bitchord.playback.AutoMixArtworkTuning
 import com.music.bitchord.playback.AutoMixArtworkWindow
@@ -37,28 +36,14 @@ class AutoMixCanvasTest {
     }
 
     @Test
-    fun aFullWindowOutgoingCanvasCanUnderlayADifferentDestinationFootprint() {
-        assertTrue(canRevealOverLiveHero(true, true, 0f, 0f))
-        assertTrue(canRevealOverLiveHero(true, false, 0.56f, 1f))
-        assertTrue(canRevealOverLiveHero(true, false, 0.56f, 0.75f))
-        assertFalse(canRevealOverLiveHero(false, true, 1f, 0.56f))
-        assertTrue(canRevealOverLiveHero(false, false, 1f, 16f / 9f))
-        assertFalse(canRevealOverLiveHero(false, false, 1f, 0.56f))
-        assertTrue(canRevealOverLiveHero(false, false, 0.56f, 0.56f))
-        assertFalse(canRevealOverLiveHero(false, false, 0.56f, 0.63f))
-        assertFalse(canRevealOverLiveHero(false, false, 1f, 0f))
-    }
-
-    @Test
-    fun destinationSlotDoesNotDependOnTheOutgoingProvider() {
-        val spotify = clip.copy(source = CanvasSource.SPOTIFY)
-        val apple = clip.copy(source = CanvasSource.APPLE)
-        assertTrue(spotify.usesPortraitHeroSlot(fullWindow = true, fullBleed = false))
-        assertTrue(spotify.usesPortraitHeroSlot(fullWindow = true, fullBleed = true))
-        assertFalse(apple.usesPortraitHeroSlot(fullWindow = true, fullBleed = false))
-        assertTrue(apple.usesPortraitHeroSlot(fullWindow = true, fullBleed = true))
-        assertFalse(spotify.usesPortraitHeroSlot(fullWindow = false, fullBleed = true))
-        assertFalse(apple.usesPortraitHeroSlot(fullWindow = false, fullBleed = true))
+    fun onlyMatchingHeroSlotsCanUseTheLiveReveal() {
+        assertTrue(sharesHeroRevealFootprint(true, true, 0f, 0f))
+        assertTrue(sharesHeroRevealFootprint(false, false, 1f, 16f / 9f))
+        assertFalse(sharesHeroRevealFootprint(true, false, 1f, 1f))
+        assertFalse(sharesHeroRevealFootprint(false, false, 1f, 0.56f))
+        assertTrue(sharesHeroRevealFootprint(false, false, 0.56f, 0.56f))
+        assertFalse(sharesHeroRevealFootprint(false, false, 0.56f, 0.63f))
+        assertFalse(sharesHeroRevealFootprint(false, false, 1f, 0f))
     }
 
     @Test
@@ -108,29 +93,6 @@ class AutoMixCanvasTest {
         assertNull(owner.visual)
         assertSame(tracks, owner.promoted)
         assertSame(clip, owner.promoted?.incomingClip)
-    }
-
-    @Test
-    fun spotifyGlassRequiresAnAcceptedLiveClipAndAnOpenWindow() {
-        val tracks = AutoMixCanvasTracks(visual.generation, outgoing, incoming, null) { visual }
-        tracks.incomingClip = clip.copy(source = CanvasSource.SPOTIFY)
-        tracks.incomingReady = true
-        tracks.windowOpen = true
-        assertFalse(tracks.revealsSpotifyCanvas)
-        assertTrue(tracks.sealIncoming())
-        assertTrue(tracks.revealsSpotifyCanvas)
-        tracks.windowOpen = false
-        assertFalse(tracks.revealsSpotifyCanvas)
-        tracks.windowOpen = true
-        tracks.reportIncoming(false)
-        assertFalse(tracks.revealsSpotifyCanvas)
-
-        val other = AutoMixCanvasTracks(visual.generation, outgoing, incoming, null) { visual }
-        other.incomingClip = clip.copy(source = CanvasSource.APPLE)
-        other.incomingReady = true
-        other.windowOpen = true
-        assertTrue(other.sealIncoming())
-        assertFalse(other.revealsSpotifyCanvas)
     }
 
     @Test

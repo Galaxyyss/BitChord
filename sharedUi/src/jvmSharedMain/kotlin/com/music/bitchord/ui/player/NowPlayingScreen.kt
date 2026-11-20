@@ -1556,10 +1556,6 @@ fun NowPlayingScreen(
         spotifyCanvasOnPhone ||
             (fullBleedArt && playerFillsWindow(windowWidth))
         )
-    val heroStandby = pair?.incomingClip?.takeIf { it.usesPortraitHeroSlot(fullCanvasWindow, fullBleedArt) }
-    val squareStandby = pair?.incomingClip?.takeIf {
-        heroStandby == null && (!heroMode || pair.pinnedClip?.source == CanvasSource.SPOTIFY)
-    }
 
     // Whether there's a still image to blow out — a placeholder tile is a card
     // or it is nothing, and going full-bleed with one would just tint the top
@@ -1613,9 +1609,6 @@ fun NowPlayingScreen(
     val spotifyCanvasFullscreen = spotifyCanvasOnPhone &&
         heroClip?.source == CanvasSource.SPOTIFY
     val spotifyCanvasPresentation = spotifyCanvasFullscreen && canvasRendered
-    val spotifyGlassReveal = pair?.takeIf {
-        incomingFullWindow && !collapsePastHalf && it.revealsSpotifyCanvas
-    }
     // The clip's player, which outlives [heroClip] by the second half of a
     // collapse: mounted from the moment the player is asked back, and let go
     // of once the sleeve has settled into the header. Faded out by the half
@@ -1680,18 +1673,14 @@ fun NowPlayingScreen(
     // banner waiting on a threshold and then dissolving into a finished
     // thumbnail — see `sleeveRect` down in the layout.
     val revealSquareStill = !fullBleedArt && pair?.selectedStill == true && heroIncomingStill != null
-    // The square standby must be measured in its final sleeve even while the
-    // full-window Spotify texture is still mounted behind it.
-    val squareUnderFullWindow = spotifyCanvasOnPhone && squareStandby != null
-    val revealInSquare = revealSquareStill || squareUnderFullWindow
     val heroT = animateFloatAsState(
         targetValue = if (
             // Latched first, so a clip coming and going isn't listened for
             // once the banner has settled — see [heroSettled].
             heroMode && (heroSettled || coverLoaded() || canvasRendered) &&
-                !revealInSquare
+                !revealSquareStill
         ) 1f else 0f,
-        animationSpec = if (revealInSquare) snap() else tween(durationMillis = 420, easing = FastOutSlowInEasing),
+        animationSpec = if (revealSquareStill) snap() else tween(durationMillis = 420, easing = FastOutSlowInEasing),
         label = "heroCanvas",
     )
     val spotifyChromeAlpha by animateFloatAsState(
@@ -2063,7 +2052,7 @@ fun NowPlayingScreen(
     // The hero TextureView sits behind the control/sleeve subtree. Move only the
     // frozen still pixels below that host; the live slot stays where it will be promoted.
     val staticHeroUnderlay = autoMixFrames?.takeIf { frames ->
-        heroStandby != null && pair?.liveIncoming == true && pair.pinnedClip == null && frames.generation == pair.generation &&
+        pair?.liveIncoming == true && pair.pinnedClip == null && frames.generation == pair.generation &&
             !stillMoving && !overlayOpen.value &&
             (if (heroMode) heroHeight > 0.dp else incomingFullWindow && !expandedSquare.isEmpty)
     }?.base
@@ -2705,9 +2694,9 @@ fun NowPlayingScreen(
                 // Mount once, behind the controls. A known portrait aspect changes the
                 // invisible view to full-player bounds before its first frame is shown.
                 if ((heroMode && heroHeight > 0.dp) || incomingFullWindow || clipFullscreen) {
-                    val standbyClip = heroStandby?.takeIf { !(lyricsOpen || queueOpen) || !collapseDone }
-                    val liveHeroReveal = pair?.liveOutgoing == true && pair.liveIncoming &&
-                        canRevealOverLiveHero(clipFullscreen, incomingFullWindow, canvasAspect, pair.incomingAspect)
+                    val standbyClip = pair?.incomingClip?.takeIf { !(lyricsOpen || queueOpen) || !collapseDone }
+                    val matchedLiveHero = pair?.liveOutgoing == true && pair.liveIncoming &&
+                        sharesHeroRevealFootprint(clipFullscreen, incomingFullWindow, canvasAspect, pair.incomingAspect)
                     if (staticHeroUnderlay != null && pair != null) {
                         val frame = if (heroMode) Modifier.fillMaxWidth().height(heroHeight) else Modifier.layout { measurable, constraints ->
                             val rect = expandedSquare
@@ -2786,9 +2775,9 @@ fun NowPlayingScreen(
                                 if (stillTakesOver()) 0f
                                 else if (standby) clipTransitionAlpha()
                                 else if (staticCanvasMix) 0f
-                                else if (liveHeroReveal && !pair.sharesClip && (!fullscreen || !incomingFullWindow)) {
-                                    // Retire the outgoing pixels not covered by the destination:
-                                    // its translucent bottom edge, or the area outside its slot.
+                                else if (matchedLiveHero && !pair.sharesClip && !fullscreen) {
+                                    // A shared, translucent bottom edge would otherwise show
+                                    // the outgoing clip until the exact promotion frame.
                                     outgoingArtworkTailAlpha(pair.reveal()) * clipTransitionAlpha()
                                 }
                                 else if (pair != null && heroIncomingStill != null && !stillMoving) {
@@ -2817,7 +2806,7 @@ fun NowPlayingScreen(
                             },
                             nowPlaying = true,
                             organicReveal = if (standby) {
-                                pair?.standbyReveal(staticHeroUnderlay != null || (liveHeroReveal && !stillMoving))
+                                pair?.standbyReveal(staticHeroUnderlay != null || (matchedLiveHero && !stillMoving))
                             } else null,
                             // Frames only for a mesh that will use them.
                             frameCapturePx = if (!standby && canvasOwnsAmbient && tintsOffClip && !fullscreen && !tabletArtworkBackdrop) {
@@ -2905,7 +2894,7 @@ fun NowPlayingScreen(
                 // above the video. When the deck slides away this layer leaves with
                 // it as well.
                 AnimatedVisibility(
-                    visible = (spotifyCanvasPresentation || spotifyGlassReveal != null) && spotifyCanvasControlsOpen,
+                    visible = spotifyCanvasPresentation && spotifyCanvasControlsOpen,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
@@ -2916,21 +2905,9 @@ fun NowPlayingScreen(
                     // Subscribe only while Spotify's glass layer exists. Static art and
                     // non-Spotify motion covers do not observe this new state at all.
                     val reduceDynamicBlur by PlayerSettings.reduceDynamicBlur.collectAsStateWithLifecycle()
-                    // Keep one glass layer through promotion. For incoming-only glass,
-                    // use the same clock as the live source. Retain that clock during
-                    // exit so cancellation cannot flash the glass at full opacity.
-                    var exitingReveal by remember { mutableStateOf<AutoMixCanvasTracks?>(null) }
-                    SideEffect {
-                        if (spotifyCanvasPresentation) exitingReveal = null
-                        else if (spotifyGlassReveal != null) exitingReveal = spotifyGlassReveal
-                    }
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .graphicsLayer {
-                                alpha = if (spotifyCanvasPresentation) 1f
-                                else (spotifyGlassReveal ?: exitingReveal)?.standbyOpacity() ?: 1f
-                            }
                             .then(
                                 // Flat, too, while a drawer or the ⋯ menu is up: those
                                 // blur the playing Canvas live themselves, and the
@@ -3429,7 +3406,6 @@ fun NowPlayingScreen(
                         val staticDestination = heroIncomingStill != null && !stillMoving
                         fun bannerShare(): Float = when {
                             heroHeight <= 0.dp || playerBounds.width <= 0 -> 0f
-                            squareUnderFullWindow -> 0f
                             staticDestination -> if (fullBleedArt) 1f else 0f
                             else -> heroT.value
                         }
@@ -3810,11 +3786,9 @@ fun NowPlayingScreen(
                             // Where the clip plays when it can't have the banner:
                             // inside the same clip as the still art, taking the
                             // sleeve's corners, shadow and paused shrink for free.
-                            // Keep the same keyed child before and after promotion. In
-                            // particular, don't warm a square destination in the hero host.
-                            if (!heroMode || squareStandby != null) {
+                            if (!heroMode) {
                                 WhileShown({ !collapsePastHalf }) {
-                                    CanvasPresentationHost(canvas.takeUnless { heroMode }, squareStandby) { clip, standby ->
+                                    CanvasPresentationHost(canvas, pair?.incomingClip.takeUnless { incomingFullWindow }) { clip, standby ->
                                         val stillStart = remember(clip.url) { if (standby) null else stillAtMount() }
                                         CanvasArtworkPlayer(
                                             canvas = clip,
@@ -3859,7 +3833,7 @@ fun NowPlayingScreen(
                                         )
                                     }
                                     val incoming = autoMixFrames?.incoming
-                                    if (!heroMode && incoming != null && pair?.liveOutgoing == true && !pair.liveIncoming) {
+                                    if (incoming != null && pair?.liveOutgoing == true && !pair.liveIncoming) {
                                         AutoMixIncomingStill(incoming, pair::reveal, pair.generation)
                                     }
                                 }
