@@ -37,14 +37,28 @@ class AutoMixCanvasTest {
     }
 
     @Test
-    fun onlyMatchingHeroSlotsCanUseTheLiveReveal() {
-        assertTrue(sharesHeroRevealFootprint(true, true, 0f, 0f))
-        assertTrue(sharesHeroRevealFootprint(false, false, 1f, 16f / 9f))
-        assertFalse(sharesHeroRevealFootprint(true, false, 1f, 1f))
-        assertFalse(sharesHeroRevealFootprint(false, false, 1f, 0.56f))
-        assertTrue(sharesHeroRevealFootprint(false, false, 0.56f, 0.56f))
-        assertFalse(sharesHeroRevealFootprint(false, false, 0.56f, 0.63f))
-        assertFalse(sharesHeroRevealFootprint(false, false, 1f, 0f))
+    fun aFullWindowOutgoingCanvasCanUnderlayADifferentDestinationFootprint() {
+        assertTrue(canRevealOverLiveHero(true, true, 0f, 0f))
+        assertTrue(canRevealOverLiveHero(true, false, 0.56f, 1f))
+        assertTrue(canRevealOverLiveHero(true, false, 0.56f, 0.75f))
+        assertFalse(canRevealOverLiveHero(false, true, 1f, 0.56f))
+        assertTrue(canRevealOverLiveHero(false, false, 1f, 16f / 9f))
+        assertFalse(canRevealOverLiveHero(false, false, 1f, 0.56f))
+        assertTrue(canRevealOverLiveHero(false, false, 0.56f, 0.56f))
+        assertFalse(canRevealOverLiveHero(false, false, 0.56f, 0.63f))
+        assertFalse(canRevealOverLiveHero(false, false, 1f, 0f))
+    }
+
+    @Test
+    fun destinationSlotDoesNotDependOnTheOutgoingProvider() {
+        val spotify = clip.copy(source = CanvasSource.SPOTIFY)
+        val apple = clip.copy(source = CanvasSource.APPLE)
+        assertTrue(spotify.usesPortraitHeroSlot(fullWindow = true, fullBleed = false))
+        assertTrue(spotify.usesPortraitHeroSlot(fullWindow = true, fullBleed = true))
+        assertFalse(apple.usesPortraitHeroSlot(fullWindow = true, fullBleed = false))
+        assertTrue(apple.usesPortraitHeroSlot(fullWindow = true, fullBleed = true))
+        assertFalse(spotify.usesPortraitHeroSlot(fullWindow = false, fullBleed = true))
+        assertFalse(apple.usesPortraitHeroSlot(fullWindow = false, fullBleed = true))
     }
 
     @Test

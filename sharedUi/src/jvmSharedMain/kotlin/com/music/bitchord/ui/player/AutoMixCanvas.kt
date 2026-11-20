@@ -241,11 +241,6 @@ internal fun rememberAutoMixCanvasPair(
                         }?.takeUnless { spotifyDisabled && it.source == CanvasSource.SPOTIFY }
                             ?.nowPlayingRendition(fullWindow) ?: return@launch
                         if (sealed || active !== tracks || !tracks.beforeIncomingDeadline(feed.value)) return@launch
-                        val outgoingHero = fullBleed || tracks.pinnedClip?.source == CanvasSource.SPOTIFY
-                        val incomingHero = fullBleed || clip.source == CanvasSource.SPOTIFY
-                        // The fullscreen slot can be prepared behind the square sleeve. The
-                        // reverse would require putting a square view into a banner's parent.
-                        if (!landscape && fullWindow && outgoingHero && !incomingHero) return@launch
                         tracks.incomingClip = tracks.pinnedClip?.takeIf { it.url == clip.url } ?: clip
                         if (clip.url == tracks.pinnedClip?.url) tracks.incomingReady = true
                     }
@@ -288,16 +283,20 @@ internal fun outgoingArtworkTailAlpha(progress: Float): Float {
     return 1f - smootherStep(((progress - start) / (1f - start)).coerceIn(0f, 1f))
 }
 
-/** Full-window crops, fixed-height cropped banners, and identical contained fits match. */
-internal fun sharesHeroRevealFootprint(
+/** Choose a portrait slot by the clip's own final presentation, not its mix partner. */
+internal fun CanvasArtwork.usesPortraitHeroSlot(fullWindow: Boolean, fullBleed: Boolean): Boolean =
+    fullWindow && (fullBleed || source == CanvasSource.SPOTIFY)
+
+/** A full-window outgoing crop underlays any destination; otherwise require a matching footprint. */
+internal fun canRevealOverLiveHero(
     outgoingFullscreen: Boolean,
     incomingFullscreen: Boolean,
     outgoingAspect: Float,
     incomingAspect: Float,
-): Boolean = if (outgoingFullscreen || incomingFullscreen) {
-    outgoingFullscreen && incomingFullscreen
-} else {
-    outgoingAspect.isFinite() && incomingAspect.isFinite() && outgoingAspect > 0f && incomingAspect > 0f &&
+): Boolean {
+    if (outgoingFullscreen) return true
+    if (incomingFullscreen) return false
+    return outgoingAspect.isFinite() && incomingAspect.isFinite() && outgoingAspect > 0f && incomingAspect > 0f &&
         ((outgoingAspect >= 1f && incomingAspect >= 1f) || outgoingAspect == incomingAspect)
 }
 
