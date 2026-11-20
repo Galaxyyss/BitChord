@@ -337,8 +337,10 @@ private fun PlayerMeshBackdrop(
     modifier: Modifier = Modifier,
     ambient: AutoMixAmbient,
     entry: QueueEntryIdentity?,
+    canvasAmbient: AutoMixCanvasAmbient?,
 ) {
-    val seed = ambient.incoming?.mesh
+    val liveSeed = ambient.settledCanvas(canvasAmbient)?.mesh
+    val seed = liveSeed ?: ambient.incoming?.mesh
     val snapKey = rememberAmbientSnapKey(ambient.snapKey(seed != null))
     val mix = ambient.mixFor(seed != null)
     val url = imageUrl ?: ambient.incoming?.resolvedUrl
@@ -366,6 +368,8 @@ private fun PlayerMeshBackdrop(
             currentIsOutgoing = entry == mix?.outgoing,
             directSelection = ambient.direct,
             directStill = ambient.direct != null && frame == null,
+            canvasAmbient = canvasAmbient?.takeIf { it.generation == mix?.generation },
+            fadeFromFallback = canvasKey != null && frame != null && ambient.direct == null,
         )
     }
 }
@@ -380,9 +384,11 @@ private fun LegacyMeshBackdrop(
     modifier: Modifier,
     ambient: AutoMixAmbient,
     entry: QueueEntryIdentity?,
+    canvasAmbient: AutoMixCanvasAmbient?,
 ) {
     val url = imageUrl ?: ambient.incoming?.resolvedUrl
-    val settled = ambient.incoming?.palette
+    val liveSeed = ambient.settledCanvas(canvasAmbient)?.palette
+    val settled = liveSeed ?: ambient.incoming?.palette
     val requestedSnap = ambient.snapKey(settled != null)
     val snapKey = rememberAmbientSnapKey(requestedSnap)
     val seed = settled ?: cachedArtworkPalette(url).takeIf { ambient.cancelled || ambient.direct != null }
@@ -398,6 +404,7 @@ private fun LegacyMeshBackdrop(
         settled = requestedSnap != null,
         currentIsOutgoing = entry == mix?.outgoing,
         directStill = ambient.direct != null && frame == null,
+        canvasAmbient = canvasAmbient?.takeIf { it.generation == mix?.generation },
     )
 }
 
@@ -1948,11 +1955,18 @@ fun NowPlayingScreen(
     // Tablet-sized players use the full-cover blur in all three states, and so
     // does the phone under the simple theme — see the backdrop.
     val tabletArtworkBackdrop = tabletSizedPlayer(windowWidth)
+    val samplesCanvasAmbient = !landscape && !tabletArtworkBackdrop && tintsOffClip
+    val canvasAmbient = (pair?.takeIf { it.started } ?: promotedCanvas)?.incomingAmbient?.takeIf {
+        samplesCanvasAmbient && artworkGate.allows(it.generation) &&
+            (if (playerTheme == PlayerTheme.DEFAULT) it.mesh != null else it.palette != null)
+    }
+    val promotedAmbient = canvasAmbient?.takeIf { it.generation == promotedCanvas?.generation }
     // Owned by the song-level player composition, not by any one screen state.
     // Opening lyrics/queue, and rotating into or out of landscape, therefore
     // reuse the same tiny pre-blurred bitmap instead of running a screen-sized
     // effect.
     val ambient = rememberAutoMixAmbient(coverEntry, remoteArt, artworkGate)
+    val meshAmbient = ambient.withCanvasHandoff(canvasAmbient, promoted = promotedAmbient != null)
     val ambientBlurUrl = remoteArt ?: ambient.incoming?.resolvedUrl
     val blurSeed = ambient.incoming?.blur
     val blurSnapKey = rememberAmbientSnapKey(ambient.snapKey(blurSeed != null))
@@ -2685,7 +2699,8 @@ fun NowPlayingScreen(
                         // the artwork simply sits on top of them. Keyed on the track, so
                         // they drift when the player opens and on every skip, then rest.
                         LegacyMeshBackdrop(
-                            ambient = ambient,
+                            ambient = meshAmbient,
+                            canvasAmbient = canvasAmbient,
                             entry = coverEntry,
                             imageUrl = remoteArt,
                             canvasFrame = { canvasFrame.takeIf { canvasOwnsAmbient } },
@@ -2707,7 +2722,8 @@ fun NowPlayingScreen(
                         // Stays mounted under a full-screen Spotify Canvas, undrawn, for
                         // a panel opening over it to find ready.
                         PlayerMeshBackdrop(
-                            ambient = ambient,
+                            ambient = meshAmbient,
+                            canvasAmbient = canvasAmbient,
                             entry = coverEntry,
                             trackKey = song.videoId,
                             imageUrl = remoteArt,
@@ -2774,6 +2790,8 @@ fun NowPlayingScreen(
                         val stillStart = remember(clip.url) { if (standby) null else stillAtMount() }
                         var slotAspect by remember { mutableFloatStateOf(0f) }
                         val fullscreen = fullCanvasWindow && clip.source == CanvasSource.SPOTIFY
+                        val standbyAmbient = pair?.takeIf { standby && samplesCanvasAmbient && it.canSampleIncomingAmbient(clip) }
+                        val captureStandbyAmbient = rememberIncomingCanvasAmbientCapture(canvasPair, standbyAmbient, clip, playerTheme, artworkGate)
                         val portrait = !fullscreen && slotAspect > 0f && slotAspect < 1f
                         val bottom = if (portrait) canvasBottom(slotAspect) else 0.dp
 
@@ -2871,16 +2889,22 @@ fun NowPlayingScreen(
                                 )
                             } else null,
                             // Frames only for a mesh that will use them.
-                            frameCapturePx = if (!standby && canvasOwnsAmbient && tintsOffClip && !fullscreen && !tabletArtworkBackdrop) {
+                            frameCapturePx = if (standbyAmbient != null ||
+                                (!standby && canvasOwnsAmbient && tintsOffClip && !fullscreen && !tabletArtworkBackdrop)
+                            ) {
                                 CANVAS_FRAME_CAPTURE_PX
                             } else {
                                 0
                             },
                             onFrameCaptured = {
-                                if (!standby && canvasOwnsAmbient && !fullscreen && !tabletArtworkBackdrop &&
+                                if (standby) captureStandbyAmbient(it)
+                                else if (canvasOwnsAmbient && !fullscreen && !tabletArtworkBackdrop &&
                                     !lyricsOpen && !queueOpen && !queueDragging
                                 ) canvasFrame = it
                             },
+                            initialFrameCaptureGeneration = standbyAmbient?.generation
+                                ?: promotedAmbient?.takeIf { !standby && it.clip == clip }?.generation,
+                            standbyFrameCapture = canvasPair.standbyFrameCapture(standbyAmbient, clip, artworkGate),
                             // The full-screen Spotify video has no mesh to re-tint.
                             // Keeping this null also removes the old three-second GPU
                             // readback cadence from this provider alone.
@@ -3850,6 +3874,8 @@ fun NowPlayingScreen(
                                 WhileShown({ !collapsePastHalf || (gestureArtwork && !collapseDone && pair?.incomingClip != null) }) {
                                     CanvasPresentationHost(canvas.takeUnless { collapsePastHalf }, pair?.incomingClip.takeUnless { incomingFullWindow }) { clip, standby ->
                                         val stillStart = remember(clip.url) { if (standby) null else stillAtMount() }
+                                        val standbyAmbient = pair?.takeIf { standby && samplesCanvasAmbient && it.canSampleIncomingAmbient(clip) }
+                                        val captureStandbyAmbient = rememberIncomingCanvasAmbientCapture(canvasPair, standbyAmbient, clip, playerTheme, artworkGate)
                                         CanvasArtworkPlayer(
                                             canvas = clip,
                                             isPlaying = isPlaying,
@@ -3881,14 +3907,20 @@ fun NowPlayingScreen(
                                             },
                                             nowPlaying = true,
                                             organicReveal = if (standby) pair?.standbyReveal(!stillMoving) else null,
-                                            frameCapturePx = if (!standby && canvasOwnsAmbient && tintsOffClip && !tabletArtworkBackdrop) {
+                                            frameCapturePx = if (standbyAmbient != null ||
+                                                (!standby && canvasOwnsAmbient && tintsOffClip && !tabletArtworkBackdrop)
+                                            ) {
                                                 CANVAS_FRAME_CAPTURE_PX
                                             } else 0,
                                             onFrameCaptured = {
-                                                if (!standby && canvasOwnsAmbient && !tabletArtworkBackdrop && !lyricsOpen && !queueOpen) {
+                                                if (standby) captureStandbyAmbient(it)
+                                                else if (canvasOwnsAmbient && !tabletArtworkBackdrop && !lyricsOpen && !queueOpen) {
                                                     canvasFrame = it
                                                 }
                                             },
+                                            initialFrameCaptureGeneration = standbyAmbient?.generation
+                                                ?: promotedAmbient?.takeIf { !standby && it.clip == clip }?.generation,
+                                            standbyFrameCapture = canvasPair.standbyFrameCapture(standbyAmbient, clip, artworkGate),
                                             refreshFrameEveryMs = if (
                                                 standby || !canvasOwnsAmbient || tabletArtworkBackdrop || lyricsOpen || queueOpen || dockMoving
                                             ) null else meshRefreshMs,

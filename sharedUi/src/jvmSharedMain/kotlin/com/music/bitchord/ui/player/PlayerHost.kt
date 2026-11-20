@@ -428,7 +428,12 @@ class CanvasVideoSpec(
     val onResumed: () -> Unit,
     val nowPlaying: Boolean = false,
     val organicReveal: CanvasOrganicReveal? = null,
+    val initialFrameCaptureGeneration: Long? = null,
+    val standbyFrameCapture: CanvasStandbyFrameCapture? = null,
 )
+
+/** One optional early ambient read, invalidated directly by the native surface. */
+class CanvasStandbyFrameCapture(val claim: () -> Boolean, val invalidate: () -> Unit)
 
 /** Audio-clock coverage, independent of the video slot's presentation alpha. */
 class CanvasOrganicReveal(
@@ -489,6 +494,9 @@ fun CanvasArtworkPlayer(
     nowPlaying: Boolean = false,
     /** Optional spatial reveal for a compatible incoming slot. */
     organicReveal: CanvasOrganicReveal? = null,
+    /** Preserve a successful standby sample on promotion; an unseeded promotion requests a fresh frame. */
+    initialFrameCaptureGeneration: Long? = null,
+    standbyFrameCapture: CanvasStandbyFrameCapture? = null,
 ) {
     PlayerPlatform.host.CanvasVideo(
         CanvasVideoSpec(
@@ -515,6 +523,8 @@ fun CanvasArtworkPlayer(
             onResumed = onResumed,
             nowPlaying = nowPlaying,
             organicReveal = organicReveal,
+            initialFrameCaptureGeneration = initialFrameCaptureGeneration,
+            standbyFrameCapture = standbyFrameCapture,
         ),
         modifier,
     )

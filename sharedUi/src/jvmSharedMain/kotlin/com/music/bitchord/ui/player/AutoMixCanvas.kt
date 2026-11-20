@@ -12,11 +12,13 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.IntSize
 import com.music.bitchord.data.canvas.CanvasArtwork
 import com.music.bitchord.data.canvas.CanvasSource
 import com.music.bitchord.data.model.QueueEntryIdentity
 import com.music.bitchord.data.model.Song
+import com.music.bitchord.data.settings.PlayerTheme
 import com.music.bitchord.playback.AutoMixArtworkTuning
 import com.music.bitchord.playback.AutoMixVisualPhase
 import com.music.bitchord.playback.AutoMixVisualState
@@ -77,6 +79,45 @@ internal class AutoMixCanvasPair {
     }
 
     fun invalidatePromotion() { promoted = null }
+
+    fun standbyFrameCapture(tracks: AutoMixCanvasTracks?, clip: CanvasArtwork, gate: AutoMixArtworkGate) =
+        tracks?.let {
+            CanvasStandbyFrameCapture(
+                claim = { visual === it && it.claimIncomingAmbientCapture(clip, gate) },
+                // The native slot may still be standby until this promotion is applied.
+                invalidate = { if (visual === it || promoted === it) it.invalidateIncomingAmbient(clip) },
+            )
+        }
+}
+
+internal data class AutoMixCanvasAmbient(
+    val generation: Long,
+    val entry: QueueEntryIdentity,
+    val clip: CanvasArtwork,
+    val mesh: ArtworkMesh?,
+    val palette: MeshPalette?,
+    private val sampledAt: Float,
+    private val lostAt: Float? = null,
+) {
+    val retiring get() = lostAt != null
+
+    private fun blendFrom(start: Float, progress: Float): Float =
+        AutoMixArtworkTuning.ease(((progress - start) / (1f - start)).coerceIn(0f, 1f))
+
+    private fun liveAlpha(progress: Float) = if (sampledAt == 0f) progress else blendFrom(sampledAt, progress)
+
+    fun alphaAt(progress: Float): Float = lostAt?.let { liveAlpha(it) * (1f - blendFrom(it, progress)) }
+        ?: liveAlpha(progress)
+
+    fun stillAlphaAt(progress: Float): Float = if (sampledAt != 0f) progress else
+        lostAt?.let { progress * blendFrom(it, progress) } ?: 0f
+
+    /** Decoder loss changes the artwork choice immediately, but not the last drawn colors. */
+    fun retireAt(progress: Float): AutoMixCanvasAmbient? = when {
+        retiring -> this
+        progress >= 1f || liveAlpha(progress) <= 0f -> null
+        else -> copy(lostAt = progress)
+    }
 }
 
 internal class AutoMixCanvasTracks(
@@ -93,6 +134,9 @@ internal class AutoMixCanvasTracks(
     var incomingAspect by mutableStateOf(0f)
     private var incomingAccepted by mutableStateOf(false)
     private var choiceSealed by mutableStateOf(false)
+    private var preparedAmbient by mutableStateOf<AutoMixCanvasAmbient?>(null)
+    private var ambientCaptureClaimed = false
+    private var ambientCaptureInvalidated = false
     var outgoingReady by mutableStateOf(pinnedClip != null)
     var windowOpen by mutableStateOf(false)
     var progress by mutableFloatStateOf(0f)
@@ -103,6 +147,43 @@ internal class AutoMixCanvasTracks(
     val liveOutgoing get() = started && outgoingReady && pinnedClip != null
     val sharesClip get() = pinnedClip?.url?.let { it == incomingClip?.url } == true
 
+    val incomingAmbient: AutoMixCanvasAmbient?
+        get() = preparedAmbient?.takeIf { it.retiring || (liveIncoming && canSampleIncomingAmbient(it.clip)) }
+
+    fun canSampleIncomingAmbient(clip: CanvasArtwork): Boolean =
+        pinnedClip == null && clip == incomingClip && clip.source != CanvasSource.SPOTIFY
+
+    fun wantsIncomingAmbient(clip: CanvasArtwork, gate: AutoMixArtworkGate): Boolean =
+        incomingAmbientProgress(clip, gate) != null
+
+    fun claimIncomingAmbientCapture(clip: CanvasArtwork, gate: AutoMixArtworkGate): Boolean {
+        if (ambientCaptureClaimed || !wantsIncomingAmbient(clip, gate)) return false
+        ambientCaptureClaimed = true
+        return true
+    }
+
+    private fun incomingAmbientProgress(clip: CanvasArtwork, gate: AutoMixArtworkGate): Float? {
+        if (preparedAmbient != null || ambientCaptureInvalidated || !incomingReady || !canSampleIncomingAmbient(clip) ||
+            !gate.allows(generation)
+        ) return null
+        val state = visualSample() ?: return null
+        if (beforeIncomingDeadline(state)) return 0f
+        // Leave a real blend interval on the artwork clock. Any sample that
+        // misses it belongs to ordinary Canvas retinting, not this reveal.
+        if (state.generation != generation || !state.mixActive || state.artworkWindow == null ||
+            !liveIncoming || state.artworkProgress >= 0.65f
+        ) return null
+        return AutoMixArtworkTuning.revealProgress(state.artworkProgress)
+    }
+
+    fun retainIncomingAmbient(
+        clip: CanvasArtwork, gate: AutoMixArtworkGate, mesh: ArtworkMesh? = null, palette: MeshPalette? = null,
+    ) {
+        if (mesh == null && palette == null) return
+        val progress = incomingAmbientProgress(clip, gate) ?: return
+        preparedAmbient = AutoMixCanvasAmbient(generation, incoming, clip, mesh, palette, progress)
+    }
+
     fun beforeIncomingDeadline(state: AutoMixVisualState?): Boolean {
         if (state == null || state.generation != generation) return false
         if (state.phase == AutoMixVisualPhase.ARMED) return true
@@ -111,10 +192,23 @@ internal class AutoMixCanvasTracks(
         return state.audioSeconds < window.startSeconds - AutoMixArtworkTuning.CANVAS_READY_MARGIN_SECONDS
     }
 
+    fun invalidateIncomingAmbient(clip: CanvasArtwork) {
+        if (clip != incomingClip) return
+        ambientCaptureInvalidated = ambientCaptureClaimed
+        preparedAmbient = preparedAmbient?.let { ambient ->
+            if (ambient.retiring) ambient else {
+                visualSample()?.takeIf {
+                    liveIncoming && it.generation == generation && it.mixActive && it.artworkWindow != null
+                }?.let { ambient.retireAt(AutoMixArtworkTuning.revealProgress(it.artworkProgress)) }
+            }
+        }
+    }
+
     fun reportIncoming(ready: Boolean) {
         // A first-frame callback can run before the collector seals the choice,
         // even though the live audio sample has already passed the deadline.
         if (ready && (choiceSealed || incomingReady || !beforeIncomingDeadline(visualSample()))) return
+        if (!ready) incomingClip?.let(::invalidateIncomingAmbient)
         if (!ready && incomingAccepted && incomingReady) {
             // A lost surface or failed decoder may not rejoin this dissolve.
             incomingAccepted = false
@@ -173,6 +267,38 @@ internal class AutoMixCanvasTracks(
 
     fun usesGestureSleeve(gesturing: Boolean): Boolean = gesturing && started &&
         (pinnedClip != null || incomingClip != null || gestureIncoming != null)
+}
+
+/** Bounded preparation in the existing standby slot, never a periodic standby readback. */
+@Composable
+internal fun rememberIncomingCanvasAmbientCapture(
+    owner: AutoMixCanvasPair,
+    tracks: AutoMixCanvasTracks?,
+    clip: CanvasArtwork,
+    theme: PlayerTheme,
+    gate: AutoMixArtworkGate,
+): (ImageBitmap) -> Unit {
+    val frame = remember(tracks, clip, theme, gate) { mutableStateOf<ImageBitmap?>(null) }
+    val captured = frame.value
+    LaunchedEffect(tracks, clip, theme, gate, captured) {
+        if (tracks == null || captured == null) return@LaunchedEffect
+        if (owner.visual === tracks && tracks.wantsIncomingAmbient(clip, gate)) {
+            val visual = PlayerPlatform.host.autoMixVisualState?.value
+            val artworkUrl = preparedAutoMixAmbient?.takeIf { it.generation == tracks.generation }?.resolvedUrl
+                ?: visual?.takeIf { it.generation == tracks.generation }?.incoming?.artworkUrl
+            val mesh = if (theme == PlayerTheme.DEFAULT) canvasArtworkMesh(captured, artworkUrl) else null
+            val palette = if (theme == PlayerTheme.LEGACY) canvasArtworkPalette(captured) else null
+            if (owner.visual === tracks) tracks.retainIncomingAmbient(clip, gate, mesh, palette)
+        }
+        frame.value = null
+    }
+    return remember(tracks, clip, gate, frame) {
+        { image ->
+            if (tracks != null && owner.visual === tracks && tracks.wantsIncomingAmbient(clip, gate)) {
+                frame.value = image
+            }
+        }
+    }
 }
 
 @Composable

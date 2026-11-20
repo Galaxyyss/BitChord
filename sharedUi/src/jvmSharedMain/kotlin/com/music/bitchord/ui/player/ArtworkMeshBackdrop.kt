@@ -338,6 +338,7 @@ internal fun rememberArtworkMesh(
     var mesh by remember(imageUrl, clipKey) {
         mutableStateOf(seed ?: clipMeshFor(clipKey) ?: imageUrl?.let(meshCache::get))
     }
+    var hasFrame by remember(imageUrl, clipKey) { mutableStateOf(false) }
 
     LaunchedEffect(imageUrl, artPx, clipKey) {
         if (imageUrl == null || mesh != null) return@LaunchedEffect
@@ -354,7 +355,7 @@ internal fun rememberArtworkMesh(
             val bitmap = (result as? SuccessResult)?.image?.toImageBitmap()
             if (bitmap != null) {
                 val found = cacheStillMesh(imageUrl, bitmap)
-                if (found != null) mesh = found
+                if (found != null && !hasFrame) mesh = found
                 // A cover that decoded but had no mesh in it — see [meshOf] —
                 // is an answer, not a failure. Asking again gets the same one.
                 return@LaunchedEffect
@@ -364,18 +365,19 @@ internal fun rememberArtworkMesh(
 
     LaunchedEffect(imageUrl, clipKey, canvasFrame) {
         val frame = canvasFrame ?: return@LaunchedEffect
-        // Reject frames that are too dark or uniform — they are almost always
-        // the first read after a surface recreation, before ExoPlayer has
-        // decoded real content.  A frame whose mean luminance is below this
-        // threshold is discarded; the last valid mesh is kept instead.
-        val found = withContext(Dispatchers.Default) {
-            if (isLikelyBlackFrame(frame)) null else meshOf(frame, imageUrl?.hashCode() ?: 0)
-        } ?: return@LaunchedEffect
+        val found = canvasArtworkMesh(frame, imageUrl) ?: return@LaunchedEffect
+        hasFrame = true
         mesh = found
         if (clipKey != null) lastClipMesh = ClipMesh(clipKey, found)
     }
     return mesh
 }
+
+/** Invalid reads leave the last good backdrop in place. */
+internal suspend fun canvasArtworkMesh(frame: ImageBitmap, imageUrl: String?): ArtworkMesh? =
+    withContext(Dispatchers.Default) {
+        if (isLikelyBlackFrame(frame)) null else meshOf(frame, imageUrl?.hashCode() ?: 0)
+    }
 
 /**
  * The player's backdrop: [mesh] hung from where the artwork stops, and stretched
@@ -421,6 +423,7 @@ internal fun ArtworkMeshBackdrop(
     mesh: ArtworkMesh?, modifier: Modifier, seam: () -> Dp, fallback: Color = FallbackBackdrop,
     mix: AutoMixAmbientMix?, currentIsOutgoing: Boolean = false,
     directSelection: Pair<Long, QueueEntryIdentity>? = null, directStill: Boolean = false,
+    canvasAmbient: AutoMixCanvasAmbient? = null, fadeFromFallback: Boolean = false,
 ) {
     val reduceAnimation by PlayerSettings.reduceAnimation.collectAsStateWithLifecycle()
 
@@ -455,15 +458,15 @@ internal fun ArtworkMeshBackdrop(
         val current = shown
         if (next === current) return@LaunchedEffect
 
-        // Nothing to fade *from* on the first read, and nothing to fade at all
-        // when the user has asked for less motion.
-        if (current == null || reduceAnimation) {
+        // An unprepared Canvas can arrive after settlement. Fade that mesh
+        // from the opaque fallback even if no still pixels were available.
+        if ((current == null && !fadeFromFallback) || reduceAnimation) {
             shown = next
             return@LaunchedEffect
         }
+        fade.snapTo(0f)
         incoming = next
         fadingToFallback = next == null
-        fade.snapTo(0f)
         fade.animateTo(1f, tween(MESH_FADE_MS, easing = FastOutSlowInEasing))
         shown = next
         incoming = null
@@ -489,7 +492,12 @@ internal fun ArtworkMeshBackdrop(
         if (outgoing != null && mix != null) {
             outgoing.base?.let { drawMesh(it, seamY, alpha = outgoing.baseAlpha) }
             outgoing.overlay?.let { drawMesh(it, seamY, alpha = outgoing.alpha) }
-            mix.prepared?.mesh?.let { drawMesh(it, seamY, alpha = mix.ease()) }
+            val progress = mix.ease()
+            val stillAlpha = canvasAmbient?.stillAlphaAt(progress) ?: progress
+            if (stillAlpha > 0f) {
+                mix.prepared?.mesh?.let { drawMesh(it, seamY, alpha = stillAlpha) }
+            }
+            canvasAmbient?.mesh?.let { drawMesh(it, seamY, alpha = canvasAmbient.alphaAt(progress)) }
         } else {
             drawn.wasDrawn = true
             // Paint the selected mesh (or the regular fallback) even before the effect settles.

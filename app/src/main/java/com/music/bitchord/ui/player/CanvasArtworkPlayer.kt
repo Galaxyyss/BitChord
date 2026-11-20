@@ -225,6 +225,8 @@ internal fun AndroidCanvasArtworkPlayer(
     onStillCaptured: (ImageBitmap?, Long) -> Unit = { _, _ -> },
     onResumed: () -> Unit = {},
     nowPlaying: Boolean = false,
+    initialFrameCaptureGeneration: Long? = null,
+    standbyFrameCapture: CanvasStandbyFrameCapture? = null,
 ) {
     val context = LocalContext.current
 
@@ -255,6 +257,7 @@ internal fun AndroidCanvasArtworkPlayer(
     val reportAspect by rememberUpdatedState(onAspectRatioChanged)
     val currentStartPositionMs by rememberUpdatedState(startPositionMs)
     val currentResumeDelayMs by rememberUpdatedState(resumeDelayMs)
+    val currentStandbyCapture by rememberUpdatedState(standbyFrameCapture)
     val reportResumed by rememberUpdatedState(onResumed)
     val teardown = remember { Teardown() }
     val gate = remember { ResumeGate() }
@@ -318,6 +321,7 @@ internal fun AndroidCanvasArtworkPlayer(
                     pendingTextureFrame = null
                     lastMediaTimestamp = textureView?.surfaceTexture?.timestamp ?: 0L
                 }
+                currentStandbyCapture?.invalidate?.invoke()
                 rendered = false
                 if (alternate != null && alternate != url) {
                     url = alternate
@@ -442,7 +446,7 @@ internal fun AndroidCanvasArtworkPlayer(
         reportRendered(rendered)
     }
     val reportFrame by rememberUpdatedState(onFrameCaptured)
-    LaunchedEffect(rendered, frameCapturePx) {
+    LaunchedEffect(rendered, frameCapturePx, initialFrameCaptureGeneration) {
         if (!rendered) return@LaunchedEffect
         // Let the surface actually paint the frame that just triggered this
         // before reading it back — grabbing it the instant the callback fires
@@ -450,6 +454,23 @@ internal fun AndroidCanvasArtworkPlayer(
         if (frameCapturePx <= 0) return@LaunchedEffect
         withFrameMillis { }
         val view = textureView ?: return@LaunchedEffect
+        if (standbyFrameCapture != null) {
+            if (!rendered) return@LaunchedEffect
+            val surface = view.surfaceTexture ?: return@LaunchedEffect
+            val captureGeneration = surfaceGeneration
+            val captureUrl = url
+            if (!standbyFrameCapture.claim()) return@LaunchedEffect
+            // A standby can have real pixels while its TextureView's paint is
+            // transparent. Reuse the gesture capture's raw decoder-buffer copy,
+            // at the small ambient size and without a hidden-view fallback.
+            val report = reportFrame
+            val bitmap = view.copyStill(player.videoSize, clipAspect, contentMode, alignPortraitTop, maxPx = frameCapturePx)
+                ?: return@LaunchedEffect
+            if (view !== textureView || view.surfaceTexture !== surface || surfaceGeneration != captureGeneration ||
+                url != captureUrl || !rendered
+            ) bitmap.recycle() else report(bitmap.asImageBitmap())
+            return@LaunchedEffect
+        }
         val bitmap = view.captureAt(frameCapturePx, clipAspect, contentMode, alignPortraitTop)
         if (bitmap != null) {
             Log.d(TAG, "frame captured after rendered=true, size=${bitmap.width}x${bitmap.height}")
@@ -542,12 +563,14 @@ internal fun AndroidCanvasArtworkPlayer(
                 surfaceTextureListener = object : TextureView.SurfaceTextureListener {
                     /** Whether the next surface is a replacement for one taken away. */
                     private var replacing = false
+                    private var activeSurface: SurfaceTexture? = null
 
                     override fun onSurfaceTextureAvailable(
                         surface: SurfaceTexture,
                         width: Int,
                         height: Int,
                     ) {
+                        activeSurface = surface
                         if (nowPlaying) lastMediaTimestamp = 0L
                         delegate?.onSurfaceTextureAvailable(surface, width, height)
                         // The player has moved onto the new surface, so the
@@ -574,6 +597,10 @@ internal fun AndroidCanvasArtworkPlayer(
                     override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
                         replacing = true
                         Log.d(TAG, "surface destroyed, rendered=$rendered")
+                        if (textureView === this@apply && activeSurface === surface) {
+                            activeSurface = null
+                            currentStandbyCapture?.invalidate?.invoke()
+                        }
                         // The old buffer is gone now, not when/if ExoPlayer
                         // later reports another first frame. Restore the still
                         // artwork immediately so an empty replacement surface
@@ -733,17 +760,19 @@ private suspend fun TextureView.copyStill(
     clipAspect: Float,
     contentMode: CanvasContentMode,
     alignPortraitTop: Boolean,
+    maxPx: Int? = null,
 ): Bitmap? {
     val texture = surfaceTexture ?: return null
     val videoWidth = (video.width * video.pixelWidthHeightRatio).roundToInt()
     val videoHeight = video.height
     if (videoWidth <= 0 || videoHeight <= 0 || width <= 0 || height <= 0) return null
-    // No bigger than the view shows it: across its width when contained, and
-    // covering it when cropped.
+    // Gesture stills are sized for display; ambient sampling only needs a thumbnail.
     val contained = contentMode == CanvasContentMode.FIT_PORTRAIT && clipAspect > 0f && clipAspect < 1f
     val scale = minOf(
         1f,
-        if (contained) {
+        if (maxPx != null) {
+            maxPx.toFloat() / maxOf(videoWidth, videoHeight)
+        } else if (contained) {
             width.toFloat() / videoWidth
         } else {
             maxOf(width.toFloat() / videoWidth, height.toFloat() / videoHeight)
@@ -773,6 +802,10 @@ private suspend fun TextureView.copyStill(
         }
     }
     if (result == PixelCopy.SUCCESS) return bitmap
+    if (maxPx != null) {
+        bitmap.recycle()
+        return null
+    }
     Log.w(TAG, "still copy failed ($result), reading the view instead")
     bitmap.recycle()
     val fallback = captureAt(maxOf(width, height), clipAspect, contentMode, alignPortraitTop) ?: return null
@@ -1175,6 +1208,8 @@ private fun AndroidCanvasVideoContents(spec: CanvasVideoSpec, modifier: Modifier
         onFrameCaptured = spec.onFrameCaptured,
         refreshFrameEveryMs = spec.refreshFrameEveryMs,
         frameCapturePx = spec.frameCapturePx,
+        initialFrameCaptureGeneration = spec.initialFrameCaptureGeneration,
+        standbyFrameCapture = spec.standbyFrameCapture,
         onCoverChanged = spec.onCoverChanged,
         bottomFade = spec.bottomFade,
         bottomFadeEndPx = spec.bottomFadeEndPx,

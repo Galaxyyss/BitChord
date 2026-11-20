@@ -40,9 +40,25 @@ internal class AutoMixAmbient(
     val incoming: PreparedAutoMixAmbient? = null,
     val cancelled: Boolean = false,
     val direct: Pair<Long, QueueEntryIdentity>? = null,
+    private val canvasBoundary: Pair<Long, QueueEntryIdentity>? = null,
 ) {
     fun mixFor(targetReady: Boolean): AutoMixAmbientMix? = mix?.takeUnless {
         targetReady && settled?.first == it.generation
+    }
+
+    fun settledCanvas(canvas: AutoMixCanvasAmbient?): AutoMixCanvasAmbient? = canvas?.takeIf {
+        !cancelled && !it.retiring && settled?.first == it.generation && settled.second == it.entry
+    }
+
+    /** The mesh can settle from the audio boundary or native promotion, without moving the blur. */
+    fun withCanvasHandoff(canvas: AutoMixCanvasAmbient?, promoted: Boolean): AutoMixAmbient {
+        if (canvas == null || canvas.retiring || cancelled || direct != null ||
+            (mix != null && mix.generation != canvas.generation)
+        ) return this
+        val owner = canvas.generation to canvas.entry
+        if (!promoted && canvasBoundary != owner) return this
+        if (settled == owner) return this
+        return AutoMixAmbient(mix = mix, settled = owner)
     }
 
     // Only the enabled transition's promotion has a composition reset epoch.
@@ -190,5 +206,8 @@ internal fun rememberAutoMixAmbient(entry: QueueEntryIdentity?, resolvedUrl: Str
         if (entry != null && resolvedUrl != null) history.note(entry, resolvedUrl)
     }
     val hold = (outgoing || incoming) && holdsPair && !promoted && !stage.noDissolve
-    return AutoMixAmbient(pair.takeIf { hold }, settled?.settled, settled?.incoming, settled?.cancelled == true, direct)
+    val canvasBoundary = if (incoming && stage != null && visual?.artworkWindow != null &&
+        (stage.phase == AutoMixVisualPhase.COMPLETED || (stage.phase == AutoMixVisualPhase.MIXING && stage.windowEnded))
+    ) stage.generation to visual.incoming.identity else null
+    return AutoMixAmbient(pair.takeIf { hold }, settled?.settled, settled?.incoming, settled?.cancelled == true, direct, canvasBoundary)
 }

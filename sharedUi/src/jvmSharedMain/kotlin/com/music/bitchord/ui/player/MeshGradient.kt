@@ -135,6 +135,7 @@ internal fun MeshGradientBackground(
     colorFadeMillis: Int = 1400, paused: Boolean = false, mix: AutoMixAmbientMix?,
     snapKey: Any?, settled: Boolean, currentIsOutgoing: Boolean,
     directStill: Boolean = false,
+    canvasAmbient: AutoMixCanvasAmbient? = null,
 ) {
     val reduceAnimation by PlayerSettings.reduceAnimation.collectAsStateWithLifecycle()
 
@@ -159,6 +160,9 @@ internal fun MeshGradientBackground(
     }
     val target = remember(mix) {
         mix?.prepared?.palette?.tunedSlots()?.let { LegacyAmbientColors(it, it.first().dimmed()) }
+    }
+    val liveTarget = remember(canvasAmbient) {
+        canvasAmbient?.palette?.tunedSlots()?.let { LegacyAmbientColors(it, it.first().dimmed()) }
     }
 
     // Read in the draw lambda, not here: an Animatable read during draw
@@ -210,7 +214,9 @@ internal fun MeshGradientBackground(
             .then(if (held == null || mix == null) Modifier.background(
                 if (directStill) tuned.first().dimmed() else baseColor.value,
             ) else Modifier.drawBehind {
-                drawRect(ambientColor(held.base, target?.base, mix.ease()))
+                val e = mix.ease()
+                val still = ambientColor(held.base, target?.base, canvasAmbient?.stillAlphaAt(e) ?: e)
+                drawRect(ambientColor(still, liveTarget?.base, canvasAmbient?.alphaAt(e) ?: 0f))
             })
             .blur(blurRadius),
     ) {
@@ -228,8 +234,11 @@ internal fun MeshGradientBackground(
         if (held == null && trackKey != null) {
             lastDrawn.colors = LegacyAmbientColors(slots, if (directStill) tuned.first().dimmed() else baseColor.value)
         }
+        val stillAlpha = canvasAmbient?.stillAlphaAt(e) ?: e
+        val liveAlpha = canvasAmbient?.alphaAt(e) ?: 0f
         slots.forEachIndexed { index, slot ->
-            val color = ambientColor(slot, target?.slots?.get(index), e)
+            val still = ambientColor(slot, target?.slots?.get(index), stillAlpha)
+            val color = ambientColor(still, liveTarget?.slots?.get(index), liveAlpha)
             val anchor = anchors[index]
             val center = Offset(
                 x = (anchor.x + 0.16f * cos(drift * speeds[index] + index * 1.7f)) * size.width,
@@ -350,6 +359,7 @@ internal fun rememberArtworkColors(
 ): MeshPalette {
     val context = LocalPlatformContext.current
     var palette by remember(imageUrl, clipKey) { mutableStateOf(seed ?: MeshPalette(FallbackColors)) }
+    var hasFrame by remember(imageUrl, clipKey) { mutableStateOf(false) }
 
     LaunchedEffect(imageUrl, clipKey) {
         if (imageUrl == null || seed != null) return@LaunchedEffect
@@ -358,19 +368,20 @@ internal fun rememberArtworkColors(
             withContext(Dispatchers.Default) { MeshPalette(paletteOf(bitmap)) }
         }
         artworkPaletteCache[imageUrl] = next
-        palette = next
+        if (!hasFrame) palette = next
     }
 
     LaunchedEffect(imageUrl, clipKey, canvasFrame) {
         val frame = canvasFrame ?: return@LaunchedEffect
-        // Reject near-black frames (first read after surface recreation, before
-        // ExoPlayer decodes real content).  A dark sleeve will still exceed the
-        // threshold because compression noise pushes mean luminance above ~12.
-        if (isLikelyBlackFrame(frame)) return@LaunchedEffect
-        val colors = withContext(Dispatchers.Default) { paletteOf(frame) }
-        palette = MeshPalette(colors)
+        val found = canvasArtworkPalette(frame) ?: return@LaunchedEffect
+        hasFrame = true
+        palette = found
     }
     return palette
+}
+
+internal suspend fun canvasArtworkPalette(frame: ImageBitmap): MeshPalette? = withContext(Dispatchers.Default) {
+    if (isLikelyBlackFrame(frame)) null else MeshPalette(paletteOf(frame))
 }
 
 // Keep quantized still palettes ready for ambient handoff, not just their 128px decodes.
