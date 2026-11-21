@@ -576,6 +576,7 @@ class CrossfadeController(
     /** Where each side of the blend really is between the player's own reports — see [PositionClock]. */
     private val outClock = PositionClock()
     private val inClock = PositionClock()
+    private val artworkClock = AutoMixArtworkClock(HALF_TICK_NANOS, MAX_EXTRAPOLATION_NANOS)
 
     /**
      * A player's position between the moments it actually reports one.
@@ -1752,6 +1753,7 @@ class CrossfadeController(
         lockCount = 0
         outClock.reset()
         inClock.reset()
+        artworkClock.reset()
         // The incoming player's clock is still settling off its start.
         lockQuietUntil = fadeStartedAt + LOCK_START_MS
         // However the ramp went — a late arm, a slow buffer — the blend starts
@@ -1946,7 +1948,8 @@ class CrossfadeController(
         val rise = mixRise(progress)
         val fall = mixFall(progress)
         player.volume = rise
-        out.volume = if (ranOn(out)) 0f else fall
+        val outgoingRanOn = ranOn(out)
+        out.volume = if (outgoingRanOn) 0f else fall
         onBlendHeadroom(
             headroomFor(mixRise(outgoingAt), outgoingLevel(elapsed / wallSpan + tracks.outgoingLeadMs() / span.toFloat(), wallSpan)),
         )
@@ -1957,7 +1960,21 @@ class CrossfadeController(
         // track, and reaching the end would start the next item — the very
         // song fading in — a second time on the player that is leaving.
         val visualEnd = wallSpan / 1000.0
-        val visualTime = progress * wallSpan / 1000.0
+        val visualProgress = if (AutoMixVisualFeed.pending(visualGeneration) != null) {
+            artworkClock.progress(
+                incomingProgress = incomingProgress,
+                faderProgress = progress,
+                spanMs = span,
+                outgoingRemainingMs = outRemaining,
+                outgoingPlaying = out.isPlaying,
+                outgoingSpeed = out.playbackParameters.speed,
+                nowNanos = System.nanoTime(),
+                outgoingRanOn = outgoingRanOn,
+            )
+        } else {
+            progress
+        }
+        val visualTime = visualProgress * wallSpan / 1000.0
         if (!handedOff && (progress >= render.handoffAt || (outRemaining != null && outRemaining <= HANDOFF_GUARD_MS))) {
             handOff(out, player, visualTime, visualEnd)
         }
